@@ -1,6 +1,6 @@
 <?php
 
-include_once 'Wot_api.php';
+include_once 'wgapi.php';
 $params = array(
   'region' => 'RU',
   'language' => 'ru',

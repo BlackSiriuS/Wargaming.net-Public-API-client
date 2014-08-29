@@ -9,7 +9,7 @@ class Wgapi extends WgapiCore {
     if (count($this->load_class) == 0)
       $this->update();
     foreach ($this->load_class as $class) {
-      $load_class = "api_{$this->API_name}_{$class}";
+      $load_class = "wgapi_{$this->apiName}_{$class}";
       if (class_exists($load_class)) {
         $this->$class = new $load_class($this);
       } else {
@@ -85,12 +85,12 @@ class WgApiCore {
   public $apiServer = 'demo';
   public $token = '';
   public $language = 'ru';
-  public $load_class = array();
+  public $load_class = array('account', 'auth', 'clan', 'encyclopedia', 'globalwar', 'ratings', 'tanks');
 
   function __construct($params = array()) {
     $params = (array) $params;
     foreach ($params as $key => $value)
-      if (!empty($value))
+      if (!empty($value) && $key != 'parent')
         $this->$key = $value;
     $this->language((string) @$params['language']);
     $this->region((string) @$params['region']);
@@ -213,15 +213,76 @@ class WgApiCore {
     $fdata .= "/**\n * {$knowledgeBase['long_name']} \n */\n";
     foreach ($knowledgeBase['category_names'] as $key => $value) {
       $fdata .= "/**\n * {$value} \n */\n";
-      $fdata .= "class api_{$this->API_name}_{$key} extends Wg_api\n{\n\n}\n\n";
+      $fdata .= "class wgapi_{$this->apiName}_{$key} extends WgApiCore\n{\n\n}\n\n";
     }
-    var_dump($fdata);
-    /*
     if ($file = @fopen(__FILE__, "w")) {
       fwrite($file, $fdata);
       fclose($file);
-    }*/
+    }
     die("API updated!");
   }
 
 }
+
+// After this line rewrite code
+
+
+/**
+ * World of Tanks 
+ */
+/**
+ * Кланы 
+ */
+class wgapi_wot_clan extends WgApiCore
+{
+
+}
+
+/**
+ * Рейтинги игроков 
+ */
+class wgapi_wot_ratings extends WgApiCore
+{
+
+}
+
+/**
+ * Аккаунт 
+ */
+class wgapi_wot_account extends WgApiCore
+{
+
+}
+
+/**
+ * Мировая война 
+ */
+class wgapi_wot_globalwar extends WgApiCore
+{
+
+}
+
+/**
+ * Аутентификация 
+ */
+class wgapi_wot_auth extends WgApiCore
+{
+
+}
+
+/**
+ * Энциклопедия 
+ */
+class wgapi_wot_encyclopedia extends WgApiCore
+{
+
+}
+
+/**
+ * Танки игрока 
+ */
+class wgapi_wot_tanks extends WgApiCore
+{
+
+}
+
