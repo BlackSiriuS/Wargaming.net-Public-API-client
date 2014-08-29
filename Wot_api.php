@@ -5,7 +5,7 @@
  *
  * @author XIRIX
  */
-class Wot_api {
+class Wg_api {
 
   /**
    * Протокол поумолчанию
@@ -30,14 +30,14 @@ class Wot_api {
    * Лимит выставляется на количество одновременных запросов с одного IP-адреса , и может составлять от 2 до 4 запросов в секунду.
    * @var string 
    */
-  private $standalone = 'demo';
+  public $standalone = 'demo';
 
   /**
    * Ключ для Серверного приложения
    * Лимитируются по количеству запросов от приложения в секунду. В зависимости от кластера лимит может составлять от 10 до 20 запросов в секунду.
    * @var string 
    */
-  private $server = 'demo';
+  public $server = 'demo';
 
   /**
    * Ключ авторизации пользователя
@@ -48,7 +48,7 @@ class Wot_api {
    * Если срок действия access token не был продлён, то при обращении к персональным данным пользователя появится сообщение об ошибке, и пользователь вашего приложения будет вынужден повторно аутентифицироваться. В целях безопасности все запросы, содержащие access token, должны отправляться по HTTPS.
    * @var string 
    */
-  private $token = '';
+  public $token = '';
 
   /**
    * Переменная мультизапросов
@@ -72,31 +72,47 @@ class Wot_api {
    */
   function __construct($params = array()) {
     $params = (array) $params;
+    var_dump($params);
+    if (isset($params['parent']))
+      $this->parent = (bool) $params['parent'];
+    $this->load();
+
     if (isset($params['standalone']) && !empty($params['standalone']))
       $this->standalone = (string) $params['standalone'];
     if (isset($params['server']) && !empty($params['server']))
       $this->server = (string) $params['server'];
     if (isset($params['api_name']) && !empty($params['api_name']))
       $this->API_name = (string) $params['api_name'];
+
+    foreach ($this->load_class as $class) {
+      if (isset($this->$class)) {
+        $this->$class->standalone = $this->standalone;
+        $this->$class->server = $this->server;
+        $this->$class->API_name = $this->API_name;
+      }
+    }
+    var_dump(get_parent_class($this));
+
     $this->setRegion((string) $params['region']);
     $this->setLanguage((string) $params['language']);
     if (isset($params['user']) && is_array($params['user']))
       $this->setUser($info);
-    if (isset($params['parent']))
-      $this->parent = (bool) $params['parent'];
-    $this->load();
   }
 
   function load() {
-    $this->erorr = new Wot_api_error();
-    if ($this->parent)
-      foreach ($this->load_class as $class)
-        if (class_exists($class)) {
-          $load_class = 'api_' . $this->API_name . '_' . $class;
-          $item = $this;
-          $item->parent = false;
-          $this->$class = new $load_class($item);
+    $this->erorr = new Wg_api_error();
+    if ($this->parent) {
+      $this->parent = false;
+      foreach ($this->load_class as $class) {
+        $load_class = "api_{$this->API_name}_{$class}";
+        if (class_exists($load_class)) {
+          $this->$class = new $load_class($this);
+        } else {
+          echo "class not found '{$load_class}'; \n";
+          $this->update();
         }
+      }
+    }
   }
 
   /**
@@ -122,6 +138,12 @@ class Wot_api {
         $this->serverhost = 'api.worldoftanks.ru';
         break;
     }
+    foreach ($this->load_class as $class) {
+      if (isset($this->$class)) {
+        $this->$class->region = $this->region;
+        $this->$class->serverhost = $this->serverhost;
+      }
+    }
   }
 
   /**
@@ -134,6 +156,12 @@ class Wot_api {
       $this->language = $language;
     else
       $this->language = 'ru';
+
+    foreach ($this->load_class as $class) {
+      if (isset($this->$class)) {
+        $this->$class->language = $this->language;
+      }
+    }
   }
 
   /**
@@ -187,6 +215,16 @@ class Wot_api {
     $this->name = (string) @$info['name'];
     $this->id = (integer) @$info['user_id'];
     $this->expire = (integer) @$info['expire'];
+
+    foreach ($this->load_class as $class) {
+      if (isset($this->$class)) {
+        $this->$class->user = $this->user;
+        $this->$class->token = $this->token;
+        $this->$class->name = $this->name;
+        $this->$class->id = $this->id;
+        $this->$class->expire = $this->expire;
+      }
+    }
   }
 
   function send($mblock = '', $params = array()) {
@@ -248,15 +286,24 @@ class Wot_api {
     $fdata = preg_replace("/load_class \= array\((.*)/i", "load_" . "class = array('" . implode("', '", $arclass) . "');", $fdata);
     $fdata = substr($fdata, 0, strpos($fdata, "// " . "After this line rewrite code"));
     $fdata .= "// " . "After this line rewrite code" . "\n\n\n";
+    $fdata .= "/**\n * {$knowledgeBase['long_name']} \n */\n";
+    foreach ($knowledgeBase['category_names'] as $key => $value) {
+      $fdata .= "/**\n * {$value} \n */\n";
+      $fdata .= "class api_{$this->API_name}_{$key} extends Wg_api\n{\n\n}\n\n";
+    }
+
+
+
     if ($file = @fopen(__FILE__, "w")) {
       fwrite($file, $fdata);
       fclose($file);
     }
+    die("API updated!");
   }
 
 }
 
-class Wot_api_error {
+class Wg_api_error {
 
   public $field = '';
   public $code = 0;
@@ -321,3 +368,55 @@ class Wot_api_error {
 // After this line rewrite code
 
 
+/**
+ * World of Tanks 
+ */
+
+/**
+ * Кланы 
+ */
+class api_wot_clan extends Wg_api {
+  
+}
+
+/**
+ * Рейтинги игроков 
+ */
+class api_wot_ratings extends Wg_api {
+  
+}
+
+/**
+ * Аккаунт 
+ */
+class api_wot_account extends Wg_api {
+  
+}
+
+/**
+ * Мировая война 
+ */
+class api_wot_globalwar extends Wg_api {
+  
+}
+
+/**
+ * Аутентификация 
+ */
+class api_wot_auth extends Wg_api {
+  
+}
+
+/**
+ * Энциклопедия 
+ */
+class api_wot_encyclopedia extends Wg_api {
+  
+}
+
+/**
+ * Танки игрока 
+ */
+class api_wot_tanks extends Wg_api {
+  
+}
