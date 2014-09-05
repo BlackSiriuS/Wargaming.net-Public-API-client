@@ -7,7 +7,7 @@ class Wgapi extends WgapiCore {
   function load() {
     $this->erorr = new WgApiError();
     if (count($this->load_class) == 0)
-      $this->update();
+      return $this->update();
     foreach ($this->load_class as $class) {
       $load_class = "wgapi_{$this->apiName}_{$class}";
       if (class_exists($load_class)) {
@@ -17,6 +17,7 @@ class Wgapi extends WgapiCore {
         $this->update();
       }
     }
+    return true;
   }
 
 }
@@ -47,6 +48,7 @@ class WgApiError {
   function adderror($errors = array()) {
     foreach ($errors as $error)
       $this->dictionary[] = $error;
+    return $this->dictionary;
   }
 
   function set($error = array(), $url = '', $params = array()) {
@@ -60,6 +62,7 @@ class WgApiError {
         $this->value = str_replace('%FIELD%', '"' . $this->field . '"', $value[2]);
         break;
       }
+    return true;
   }
 
   function getMessage() {
@@ -90,7 +93,7 @@ class WgApiCore {
   function __construct($params = array()) {
     $params = (array) $params;
     foreach ($params as $key => $value)
-      if (!empty($value) && $key != 'parent')
+      if (!empty($value) && $key != 'parent' && !in_array($key, $this->load_class))
         $this->$key = $value;
     $this->language((string) @$params['language']);
     $this->region((string) @$params['region']);
@@ -100,6 +103,7 @@ class WgApiCore {
 
   function load() {
     $this->erorr = new WgApiError();
+    return true;
   }
 
   function language($language = 'ru') {
@@ -108,6 +112,8 @@ class WgApiCore {
       $this->language = $language;
     else
       $this->language = 'ru';
+    $this->updatevar();
+    return $this->language;
   }
 
   function region($region = 'RU') {
@@ -118,15 +124,21 @@ class WgApiCore {
       $this->region = 'RU';
     }
     $this->server = $this->serverDomain . strtolower($this->region);
+    $this->updatevar();
+    return $this->server;
   }
 
   function setuser($info = array()) {
     $info = (array) $info;
+    if (count($info) == 0)
+      return false;
     $this->user = $info;
     $this->token = (string) @$info['token'];
     $this->name = (string) @$info['name'];
     $this->id = (integer) @$info['user_id'];
     $this->expire = (integer) @$info['expire'];
+    $this->updatevar();
+    return true;
   }
 
   function protocol($protocol = array('http', 'https'), $with_token = false) {
@@ -200,8 +212,27 @@ class WgApiCore {
     return NULL;
   }
 
+  function updatevar() {
+    $var = (array) @$this;
+    if (count($this->load_class) == 0)
+      return false;
+    foreach ($this->load_class as $class) {
+      $load_class = "wgapi_{$this->apiName}_{$class}";
+      if (class_exists($load_class)) {
+        if (isset($this->$class))
+          foreach ($var as $key => $value)
+            if (!empty($value) && $key != 'parent' && !in_array($key, $this->load_class))
+              $this->$class->$key = $value;
+      } else
+        return false;
+    }
+    return true;
+  }
+
   function update() {
     $knowledgeBase = $this->send();
+    if (!$knowledgeBase)
+      return false;
     $fdata = file_get_contents(__FILE__);
     $arclass = array_keys($knowledgeBase['category_names']);
     sort($arclass);
@@ -211,78 +242,115 @@ class WgApiCore {
       $fdata = substr($fdata, 0, $_pos);
     $fdata .= "// " . "After this line rewrite code" . "\n\n\n";
     $fdata .= "/**\n * {$knowledgeBase['long_name']} \n */\n";
-    foreach ($knowledgeBase['category_names'] as $key => $value) {
-      $fdata .= "/**\n * {$value} \n */\n";
-      $fdata .= "class wgapi_{$this->apiName}_{$key} extends WgApiCore\n{\n\n}\n\n";
+    $methods = array();
+    $function_exits = array('list');
+    foreach ($knowledgeBase['methods'] as $method) {
+      $documentation = "";
+      $function = "";
+      $functional = "";
+
+      $input_form_info = array();
+      $input_fields = array();
+      foreach ($method['input_form_info']['fields'] as $fields) {
+        $input_fields[] = $fields['name'];
+        $input_form_info[(($fields['required']) ? 'required' : 'other')][] = $fields;
+      }
+      sort($input_fields);
+      unset($method['input_form_info']);
+      foreach ($method['errors'] as &$error) {
+        $error[0] = (int) $error[0];
+        $error[1] = (string) $error[1];
+        $error[2] = (string) $error[2];
+        $error = "array({$error[0]}, \"{$error[1]}\", \"{$error[2]}\")";
+      }
+      if (count($method['errors']) > 0)
+        $functional .= "\$this->erorr->add(array(" . implode(", ", $method['errors']) . "));\n";
+      unset($method['errors']);
+
+      if (isset($method['allowed_protocols'])) {
+        if (is_array($method['allowed_protocols']))
+          $functional .= "\$allowed_protocols = array('" . implode("', '", $method['allowed_protocols']) . "');\n";
+        unset($method['allowed_protocols']);
+      }
+
+      if (isset($method['allowed_http_methods'])) {
+        if (is_array($method['allowed_http_methods']))
+          $functional .= "\$allowed_http_methods = array('" . implode("', '", $method['allowed_http_methods']) . "');\n";
+        unset($method['allowed_http_methods']);
+      }
+
+      $functional .= "\$input_fields = array('" . implode("', '", $input_fields) . "');\nforeach (\$input as \$k => \$v) {if (!in_array(\$k, \$input_fields)) {unset(\$input[\$k]);}} unset(\$input_fields);\n";
+      if (in_array('access_token', $input_fields))
+        $functional .= "if (!isset(\$input['access_token'])) \$input['access_token'] = '';\n";
+      if (in_array('application_id', $input_fields))
+        $functional .= "if (!isset(\$input['application_id'])) \$input['application_id'] = '';\n";
+      if (in_array('language', $input_fields))
+        $functional .= "if (!isset(\$input['language'])) \$input['language'] = '';\n";
+
+      $documentation .= "{$method['name']}\n";
+      $documentation .= "{$method['description']}\n";
+      $documentation .= "@category {$method['category_name']}\n";
+      $documentation .= "@link {$method['url']}\n";
+      if ($method['deprecated']) {
+        $documentation .= "@todo deprecated\n";
+      }
+      unset($method['name'], $method['description'], $method['category_name'], $method['deprecated']);
+      $type_field = array();
+      foreach ($input_form_info as $input_form) {
+        foreach ($input_form as $fields) {
+          $fields['doc_type'] = str_replace(array(', ', 'numeric'), array('|', 'integer'), $fields['doc_type']);
+          $documentation .= "@param {$fields['doc_type']} \$input['{$fields['name']}'] {$fields['help_text']}\n";
+          if ($fields['deprecated']) {
+            $documentation .= "@todo deprecated \$input['{$fields['name']}'] {$fields['deprecated_text']}\n";
+          }
+          switch ($fields['doc_type']) {
+            case 'string':
+            case 'string|list':
+              $type_field['string'][] = $fields['name'];
+              break;
+            case 'timestamp/date':
+            case 'integer':
+            case 'integer|list':
+              $type_field['integer'][] = $fields['name'];
+              break;
+            case 'float':
+            case 'float|list':
+              $type_field['float'][] = $fields['name'];
+              break;
+            case 'boolean':
+              $type_field['boolean'][] = $fields['name'];
+              break;
+          }
+        }
+      }
+      foreach ($type_field as $type => $field) {
+        if (count($field) > 0) {
+          $functional .= "foreach(array('" . implode("', '", $field) . "') as \$field) {if (isset(\$input[\$field])) { if (is_array(\$input[\$field])) { foreach (\$input[\$field] as &\$field) { \$field = ({$type}) \$field;} \$input[\$field] = implode(',', \$input[\$field]);} else { \$input[\$field] = ({$type}) \$input[\$field];}}}\n";
+        }
+      }
+      $documentation .= "@return array\n";
+      $documentation = "\n/**\n * " . str_replace("\n", "\n * ", trim($documentation)) . "\n */\n";
+      $functional .= "\$output = \$this->send('{$method['url']}', \$input, \$http_method, \$protocol);\n";
+      $functional .= "return \$output;\n";
+
+
+      $function_name = explode('/', $method["url"]);
+      $prefix = in_array($function_name[1], $function_exits) ? 's' : '';
+      $function = "function {$function_name[1]}{$prefix} (\$input = array()) {\n{$functional}\n}\n";
+      $methods[$function_name[0]] = (@$methods[$function_name[0]] ? $methods[$function_name[0]] : '') . $documentation . $function;
     }
-    if ($file = @fopen(__FILE__, "w")) {
+
+
+    foreach ($knowledgeBase['category_names'] as $key => $name) {
+      $fdata .= "/**\n * {$name} \n */\n";
+      $fdata .= "class wgapi_{$this->apiName}_{$key} extends WgApiCore {\n{$methods[$key]}\n}\n\n";
+    }
+    if ($file = @fopen(__FILE__ . '.php', "w")) {
       fwrite($file, $fdata);
       fclose($file);
     }
     die("API updated!");
+    return true;
   }
 
 }
-
-// After this line rewrite code
-
-
-/**
- * World of Tanks 
- */
-/**
- * Кланы 
- */
-class wgapi_wot_clan extends WgApiCore
-{
-
-}
-
-/**
- * Рейтинги игроков 
- */
-class wgapi_wot_ratings extends WgApiCore
-{
-
-}
-
-/**
- * Аккаунт 
- */
-class wgapi_wot_account extends WgApiCore
-{
-
-}
-
-/**
- * Мировая война 
- */
-class wgapi_wot_globalwar extends WgApiCore
-{
-
-}
-
-/**
- * Аутентификация 
- */
-class wgapi_wot_auth extends WgApiCore
-{
-
-}
-
-/**
- * Энциклопедия 
- */
-class wgapi_wot_encyclopedia extends WgApiCore
-{
-
-}
-
-/**
- * Танки игрока 
- */
-class wgapi_wot_tanks extends WgApiCore
-{
-
-}
-
