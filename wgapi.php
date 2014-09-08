@@ -312,6 +312,8 @@ class WgApiCore {
       $documentation = "";
       $function = "";
       $functional = "";
+      $url = $method["url"];
+      $function_name = explode('/', $url);
 
       $input_form_info = array();
       $input_fields = array();
@@ -330,17 +332,17 @@ class WgApiCore {
         $functional .= "\$this->erorr->add(array(" . implode(", ", $method['errors']) . "));\n";
       unset($method['errors']);
 
-      if (isset($method['allowed_protocols'])) {
+      $protocol = "array()";
+      if (isset($method['allowed_protocols']))
         if (is_array($method['allowed_protocols']))
-          $functional .= "\$allowed_protocols = array('" . implode("', '", $method['allowed_protocols']) . "');\n";
-        unset($method['allowed_protocols']);
-      }
+          $protocol = "array('" . implode("', '", $method['allowed_protocols']) . "')";
+      unset($method['allowed_protocols'], $method['allowed_http_methods']);
 
       foreach ($input_fields as &$type)
         foreach ($type as $key => &$field) {
           $field = "'{$key}' => '{$field}'";
         }
-      $functional .= "if (!\$this->validate_input(\$input, array(" . implode(", ", (array) @$input_fields['required']) . "), array(" . implode(", ", (array) @$input_fields['other']) . "))) {return NULL;}\n";
+      $functional .= "if (!\$this->validate_input(\$input, array(" . implode(", ", (array) @$input_fields['required']) . "), array(" . implode(", ", (array) @$input_fields['other']) . ")))\nreturn NULL;\n";
       unset($input_fields);
       $documentation .= "{$method['name']}\n";
       $documentation .= "{$method['description']}\n";
@@ -350,7 +352,7 @@ class WgApiCore {
         $documentation .= "@todo deprecated\n";
       }
       $documentation .= "@param array \$input\n";
-      unset($method['name'], $method['description'], $method['category_name'], $method['deprecated']);
+      unset($method['name'], $method['url'], $method['description'], $method['category_name'], $method['deprecated']);
       foreach ($input_form_info as $input_form) {
         foreach ($input_form as $fields) {
           $fields['doc_type'] = str_replace(', ', '|', $fields['doc_type']);
@@ -361,12 +363,10 @@ class WgApiCore {
       }
 
       $documentation .= "@return array\n";
+      $documentation .= json_encode($method) . "\n";
       $documentation = "\n/**\n * " . str_replace(array("\n", "&mdash;", "  "), array("\n * ", "-", " "), trim($documentation)) . "\n */\n";
-      $functional .= "\$output = \$this->send('{$method['url']}', \$input/*, \$protocol*/);\n";
-      $functional .= "return \$output;\n";
-
-
-      $function_name = explode('/', $method["url"]);
+      $functional .= "\$output = \$this->send('{$url}', \$input, {$protocol});\n";
+      $functional .= "return \$output;";
       $prefix = in_array($function_name[1], $function_exits) ? 's' : '';
       $function = "function {$function_name[1]}{$prefix} (\$input = array()) {\n{$functional}\n}\n";
       $methods[$function_name[0]] = (@$methods[$function_name[0]] ? $methods[$function_name[0]] : '') . $documentation . $function;

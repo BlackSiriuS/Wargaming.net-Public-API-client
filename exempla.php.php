@@ -9,7 +9,9 @@ $params = array(
 );
 $wot = new Wgapi($params);
 $params = array(
-  'account_id' => 345345
+  'account_id' => 14373730
 );
 $wot->language('en');
-var_dump($wot->account->info($params));
+$output = $wot->account->info($params);
+unset($output[14373730]['achievements']);
+var_dump($output[14373730]);
