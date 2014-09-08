@@ -364,7 +364,7 @@ class WgApiCore {
 
       $documentation .= "@return array\n";
       $documentation .= json_encode($method) . "\n";
-      $documentation = "\n/**\n * " . str_replace(array("\n", "&mdash;", "  "), array("\n * ", "-", " "), trim($documentation)) . "\n */\n";
+      $documentation = "\n/**\n * " . str_replace(array("\n\n", "&mdash;", "  ", "\n"), array("\n", "-", " ","\n * "), trim($documentation)) . "\n */\n";
       $functional .= "\$output = \$this->send('{$url}', \$input, {$protocol});\n";
       $functional .= "return \$output;";
       $prefix = in_array($function_name[1], $function_exits) ? 's' : '';
