@@ -8,11 +8,3 @@ $params = array(
   'apiServer' => '2cc044ecd33f396b48287cd155c9958d'
 );
 $wot = new Wgapi($params);
-$params = array(
-  'application_id' => '',
-  'language' => '',
-  'account_id' => 345345
-);
-$wot->language('en');
-$wot->update();
-//var_dump($wot);

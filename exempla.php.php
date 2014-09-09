@@ -12,6 +12,13 @@ $params = array(
   'account_id' => 14373730
 );
 $wot->language('en');
+/*
 $output = $wot->account->info($params);
 unset($output[14373730]['achievements']);
-var_dump($output[14373730]);
+var_dump($output[14373730]);*/
+
+$params = array(
+  'redirect_uri' =>'http://localhost/World-of-Tanks-API-client/exempla.php.php'
+);
+$output = $wot->auth->login($params);
+var_dump($output);

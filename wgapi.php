@@ -1,19 +1,42 @@
 <?php
 
+/**
+ * Wgapi
+ * 
+ * Набор общедоступных методов API, которые предоставляют доступ к проектам Wargaming.net, включая игровой контент, статистику игроков, данные энциклопедии и многое другое.
+ * 
+ * @author Serg Auer <auerserg@gmail.com>
+ * @version 1.0
+ */
 class Wgapi extends WgapiCore {
 
+  /**
+   * Параметр определяющий что данный класс является главным/первичным
+   * @var boolean 
+   */
   public $parent = true;
 
+  /**
+   * Выполняет загрузку вторичных классов, при их отсутствии выполняет обновляет данный файл.
+   * @return boolean
+   */
   function load() {
+    //загрузка класса ошибок
     $this->erorr = new WgApiError();
+    //проверка масива наименований методов
     if (count($this->load_class) == 0)
       return $this->update();
-    foreach ($this->load_class as $class) {
-      $load_class = "wgapi_{$this->apiName}_{$class}";
-      if (class_exists($load_class)) {
-        $this->$class = new $load_class($this);
+    //загрузка дочерних классов по наименованию метода
+    foreach ($this->load_class as $_c) {
+      $lc = "wgapi_{$this->apiName}_{$_c}";
+      //проверка существования дочернего метода
+      if (class_exists($lc)) {
+        $this->$_c = new $lc($this);
       } else {
-        echo "class not found '{$load_class}'; \n";
+        /**
+         * @todo Убрать все элементы вывода
+         */
+        echo "class not found '{$lc}'; \n";
         $this->update();
       }
     }
@@ -22,14 +45,45 @@ class Wgapi extends WgapiCore {
 
 }
 
+/**
+ * WgApiError
+ * 
+ * Класс, хранящий в себе все ошибки полученные при выполнение запросов API
+ * 
+ * @author Serg Auer <auerserg@gmail.com>
+ * @version 1.4
+ */
 class WgApiError {
 
+  /**
+   * Код ошибки
+   * @var integer 
+   */
   public $code = 0;
+
+  /**
+   * Поле из-за, которого возникла ошибка
+   * @var string
+   */
   public $field = '';
+
+  /**
+   * Сообщение ошибки
+   * @var string 
+   */
   public $message = '';
+
+  /**
+   * Описание ошибки для вывода пользователю
+   * @var string 
+   */
   public $value = '';
 
+  /**
+   * Устанавливает первичный словарь ошибок для возможности обработки описания
+   */
   function __construct() {
+    //первичный словарь ошибок
     $this->dictionary = array(
       array(402, '%FIELD%_NOT_SPECIFIED', 'Не заполнено обязательное поле %FIELD%.'),
       array(404, '%FIELD%_NOT_FOUND', 'Информация не найдена.'),
@@ -45,139 +99,294 @@ class WgApiError {
     );
   }
 
-  function add($errors = array()) {
-    foreach ($errors as $error)
-      $this->dictionary[] = $error;
+  /**
+   * Добавления ошибок в словарь
+   * @param array $er Масив ошибок @example array(array(code, message, value))
+   * @return array Новый словарь ошибок
+   */
+  function add($er = array()) {
+    //добавление нескольких ошибок в цикле
+    foreach ($er as $_er)
+      $this->dictionary[] = $_er;
     return $this->dictionary;
   }
 
-  function set($error = array(), $url = '', $params = array()) {
-    foreach ($error as $key => $value) {
-      $this->$key = $value;
-    }
+  /**
+   * Добавления события ошибки для вывода пользователю
+   * @param array $er Масив ошибок @example array(code, message, value)
+   * @param string $url Метод в котором возникла ошибка
+   * @param array $p Параметры метода с которыми возникли ошибки
+   * @return NULL
+   */
+  function set($er = array(), $url = '', $p = array()) {
+    //устанавливет значенния для класса
+    foreach ($er as $_er_ => $_er)
+      $this->$_er_ = $_er;
     $this->url = $url;
-    $this->params = $params;
-    foreach ($this->dictionary as $value)
-      if ($value[0] == $this->code && str_replace('%FIELD%', strtoupper($this->field), $value[1]) == $this->message) {
-        $this->value = str_replace('%FIELD%', '"' . $this->field . '"', $value[2]);
+    $this->params = $p;
+    //поиск описания ошибки 
+    foreach ($this->dictionary as $_er)
+      if ($_er[0] == $this->code && str_replace('%FIELD%', strtoupper($this->field), $_er[1]) == $this->message) {
+        $this->value = str_replace('%FIELD%', '"' . $this->field . '"', $_er[2]);
         break;
       }
-    return true;
+    return NULL;
   }
 
+  /**
+   * Вывод значение ошибки
+   * @return string
+   */
   function getMessage() {
     return $this->message;
   }
 
+  /**
+   * Вывод описания ошибки
+   * @return string
+   */
   function getValue() {
     return $this->value;
   }
 
+  /**
+   * Выводит масив ошибки со всеми параметрами
+   * @return array
+   */
   function get() {
     return array($this->code, $this->message, $this->value);
   }
 
 }
 
+/**
+ * WgApiCore
+ * Класс хранящий в себе все основные методы для работы основного и дочернего класса
+ * 
+ * @author Serg Auer <auerserg@gmail.com>
+ * @version 2.7
+ */
 class WgApiCore {
 
-  public $protocol = 'https';
-  public $serverDomain = 'api.worldoftanks.';
-  public $apiName = 'wot';
-  public $apiStandalone = 'demo';
-  public $apiServer = 'demo';
-  public $token = '';
-  public $language = 'ru';
-  public $load_class = array('account', 'auth', 'clan', 'encyclopedia', 'globalwar', 'ratings', 'tanks');
+  /**
+   * Предпочтительный протокол для использование запросов
+   * @var string 
+   */
+  public $protocol = 'http';
 
-  function __construct($params = array()) {
-    $params = (array) $params;
-    foreach ($params as $key => $value)
-      if (!empty($value) && $key != 'parent' && !in_array($key, $this->load_class))
-        $this->$key = $value;
-    $this->language((string) @$params['language']);
-    $this->region((string) @$params['region']);
-    $this->setuser(@$params['user']);
+  /**
+   * URI игрового сервера на соответствующем кластере, без домена региона
+   * @var string 
+   */
+  public $serverDomain = 'api.worldoftanks.';
+
+  /**
+   * версия API
+   * @var string 
+   */
+  public $apiName = 'wot';
+
+  /**
+   * Идентификатор приложения работающего с API.
+   * Автономные приложения — приложения, которые взаимодействуют с API на уровне «клиент-сервер». Запросы от автономных приложений приходят с различных IP-адресов.
+   * Лимит выставляется на количество одновременных запросов с одного IP-адреса , и может составлять от 2 до 4 запросов в секунду.
+   * @var string 
+   */
+  public $apiStandalone = 'demo';
+
+  /**
+   * Идентификатор приложения работающего с API.
+   * Серверные приложения — все внешние приложения, которые взаимодействуют с API на уровне «сервер-сервер».
+   * Лимитируются по количеству запросов от приложения в секунду. В зависимости от кластера лимит может составлять от 10 до 20 запросов в секунду.
+   * @var string 
+   */
+  public $apiServer = 'demo';
+
+  /**
+   * Ключ доступа, выписывается методом аутентификации.
+   * Для получения персональных данных пользователя необходим access token. Access token выдаётся после аутентификации пользователя по Open ID.
+   * Срок действия access token составляет две недели с момента его получения. Для продления срока действия активного access token, используйте метод @see auth/prolongate.
+   * @var string 
+   */
+  public $token = '';
+
+  /**
+   * Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @var string 
+   */
+  public $language = 'ru';
+
+  /**
+   * Список доступных методов и дочерних класов для подгрузки
+   * @var array 
+   */
+  public $load_class = array();
+
+  /**
+   * Присвоение первичных параметров для функционально класса
+   * @param array $p Входящие параметры для объявления класса
+   */
+  function __construct($p = array()) {
+    $p = (array) $p;
+    foreach ($p as $_p_ => $_p)
+      if (!empty($_p) && $_p_ != 'parent' && !in_array($_p_, $this->load_class))
+        $this->$_p_ = $_p;
+    $this->language((string) @$p['language']);
+    $this->region((string) @$p['region']);
+    $this->setuser(@$p['user']);
     $this->load();
   }
 
+  /**
+   * Выполняет загрузку вторичных классов, при их отсутствии выполняет обновляет данный файл.
+   * @return boolean
+   */
   function load() {
+    //загрузка класса ошибок
     $this->erorr = new WgApiError();
     return true;
   }
 
-  function language($language = 'ru') {
-    $language_list = array('cs', 'de', 'en', 'es', 'fr', 'ko', 'pl', 'ru', 'th', 'tr', 'vi', 'zh-cn');
-    if (in_array($language, $language_list))
-      $this->language = $language;
+  /**
+   * Присвоение языка для API Client
+   * @param string $l язык клиента
+   * @return string
+   */
+  function language($l = 'ru') {
+    //проверка валидности языка
+    if (in_array($l, array('cs', 'de', 'en', 'es', 'fr', 'ko', 'pl', 'ru', 'th', 'tr', 'vi', 'zh-cn')))
+      $this->language = $l;
     else
       $this->language = 'ru';
+    //обновление переменных для дочерних классво
     $this->updatevar();
     return $this->language;
   }
 
-  function region($region = 'RU') {
-    $region_list = array('ASIA', 'EU', 'KR', 'NA', 'RU');
-    if (in_array($region, $region_list)) {
-      $this->region = $region;
-    } else {
+  /**
+   * Присвоение региона для API Client
+   * @param string $r регион клиента
+   * @return string
+   */
+  function region($r = 'RU') {
+    //проверка валидности региона
+    if (in_array($r, array('ASIA', 'EU', 'KR', 'NA', 'RU')))
+      $this->region = $r;
+    else
       $this->region = 'RU';
-    }
     $this->server = $this->serverDomain . strtolower($this->region);
+    //обновление переменных для дочерних классво
     $this->updatevar();
     return $this->server;
   }
 
-  function setuser($info = array()) {
-    $info = (array) $info;
-    if (count($info) == 0)
+  /**
+   * Установка авторизационных данных пользователя
+   * @param array $i массив с данными пользователя для аворизации
+   * @return boolean
+   */
+  function setuser($i = array()) {
+    $i = (array) @$i;
+    if (count($i) == 0)
       return false;
-    $this->user = $info;
-    $this->token = (string) @$info['token'];
-    $this->name = (string) @$info['name'];
-    $this->id = (integer) @$info['user_id'];
-    $this->expire = (integer) @$info['expire'];
+    $this->user = $i;
+    $this->token = (string) @$i['token'];
+    $this->name = (string) @$i['name'];
+    $this->id = (integer) @$i['user_id'];
+    $this->expire = (integer) @$i['expire'];
+    //обновление переменных для дочерних классво
     $this->updatevar();
     return true;
   }
 
-  function protocol($protocol = array('http', 'https'), $with_token = false) {
-    $protocol = (array) $protocol;
-    $_protocol = $this->protocol;
-    if ($with_token)
-      $_protocol = 'https';
-    if (count($protocol) == 0)
-      return $_protocol;
-    if (in_array($_protocol, $protocol))
-      return $_protocol;
-    return $protocol[0];
+  /**
+   * Выберает подходящий протокол для запроса
+   * @param array $pr массив с подходящими протоколами для определенных запросов
+   * @param boolean $t флаг используется ли авторизация пользователя
+   * @return string
+   */
+  function protocol($pr = array('http', 'https'), $t = false) {
+    $pr = (array) $pr;
+    //определение предпочтительного протокола
+    $_pr = ($t) ? 'https' : $this->protocol;
+    unset($t);
+    //при отсутствие вариантов использовать предпочтительный протокол
+    if (count($pr) == 0)
+      return $_pr;
+    //выбор предпочтительного протокола из доступных вариантов
+    if (in_array($_pr, $pr))
+      return $_pr;
+    //выбор доступного варианта
+    return array_shift($pr);
   }
 
-  function seturl($mblock = '', $mname = '') {
-    $_params = array($this->protocol . ':/', $this->server, $this->apiName);
-    if ($mblock)
-      $_params[] = $mblock;
-    if ($mname)
-      $_params[] = $mname;
-    $_params[] = '';
-    $this->url = implode('/', $_params);
+  /**
+   * Формирование ссылки для создания запроса
+   * @param string $pr протокол
+   * @param string $b название группы методов
+   * @param string $m название метода
+   * @return string
+   */
+  function seturl($pr, $b = '', $m = '') {
+    $_p = array($pr . ':/', $this->server, $this->apiName);
+    if ($b)
+      $_p[] = $b;
+    if ($m)
+      $_p[] = $m;
+    $_p[] = '';
+    $this->url = implode('/', $_p);
     return $this->url;
   }
 
-  function send($mblock = '', $params = array()) {
-    if (isset($params['application_id']) && empty($params['application_id']))
-      $params['application_id'] = isset($params['access_token']) ? $this->apiStandalone : $this->apiServer;
-    if (isset($params['language']) && empty($params['language']))
-      $params['language'] = $this->language;
-
+  /**
+   * Выполнение запросов API. При возниконовеннии ошибки возращается NULL. Ошибка записывае в класс error.
+   * @param type $m название группы методов и метода
+   * @param type $p параметры метода
+   * @param type $pr протокол
+   * @return null|array
+   */
+  function send($m = '', $p = array(), $pr = array()) {
+    //определение токена авторизации
+    if (isset($p['access_token']) && empty($p['access_token']))
+      $p['access_token'] = (isset($this->token) && !empty($this->token)) ? $this->token : '';
+    //удаление токена авторизации при его пустом значении
+    if (isset($p['access_token']) && empty($p['access_token']))
+      unset($p['access_token']);
+    //флаг авторизировано пользователя
+    $_wt = (isset($p['access_token']) && !empty($p['access_token']));
+    //выбор протокола
+    $pr = $this->protocol($pr, $_wt);
+    //определение ключа приложенния
+    if (isset($p['application_id']) && empty($p['application_id']))
+      $p['application_id'] = $_wt ? $this->apiStandalone : $this->apiServer;
+    //определение языка вывода
+    if (isset($p['language']) && empty($p['language']))
+      $p['language'] = $this->language;
+    unset($_wt);
+    //формированние запроса
     $c = curl_init();
-    if (count($params) > 0) {
+    //проверка будут ли использоватся параметры метода
+    if (count($p) > 0) {
       curl_setopt($c, CURLOPT_POST, true);
-      curl_setopt($c, CURLOPT_POSTFIELDS, http_build_query($params));
+      curl_setopt($c, CURLOPT_POSTFIELDS, http_build_query($p));
     }
     curl_setopt($c, CURLOPT_RETURNTRANSFER, true);
-    if ($this->protocol == 'https')
+    //дополнительный параметр протокола
+    if ($pr == 'https')
       curl_setopt($c, CURLOPT_SSL_VERIFYPEER, false);
+    //Эмулированние браузерра
     curl_setopt($c, CURLOPT_HTTPHEADER, array(
       "X-Requested-With: XMLHttpRequest",
       "Accept: text/html, */*",
@@ -185,202 +394,262 @@ class WgApiCore {
       "Connection: Keep-Alive",
     ));
     curl_setopt($c, CURLOPT_TIMEOUT, 120);
-    curl_setopt($c, CURLOPT_URL, $this->setURL($mblock));
-    $data = curl_exec($c);
+    curl_setopt($c, CURLOPT_URL, $this->setURL($pr, $m));
+    $d = curl_exec($c);
     curl_close($c);
-    $result = @json_decode((string) @$data, true);
-
-    if (!$result)
-      return (string) @$data;
-
-    if (!isset($result['status']))
-      return $result;
-
-    if ($result['status'] == 'ok')
-      return $result['data'];
-
-    if (isset($result[$result['status']])) {
-      $erorr = $result[$result['status']];
-      switch ((string) $erorr['message']) {
+    //перевод данных в массив
+    $r = @json_decode((string) @$d, true);
+//при ошибки получения массива возвращаем полученные данные
+    if (!$r)
+      return (string) @$d;
+    unset($d);
+    //при отсутствие статуса выводим полученный масив
+    if (!isset($r['status']))
+      return $r;
+    //при верном статусе возвращаем данные
+    if ($r['status'] == 'ok')
+      return $r['data'];
+//при ошибки переводим обработчик ошибок
+    if (isset($r[$r['status']])) {
+      $er = $r[$r['status']];
+      //присвоенние ошибки
+      $this->erorr->set($er, $m, $p);
+      switch ((string) $er['message']) {
+        //выполняем запрос без токена
         case 'INVALID_ACCESS_TOKEN':
-          unset($params['access_token']);
-          return $this->send($mblock, $params);
+          unset($p['access_token']);
+          return $this->send($m, $p);
+          break;
+        //выполняем обновление клиента
+        case 'METHOD_DISABLED':
+        case 'METHOD_NOT_FOUND':
+          /**
+           * @todo Убрать все элементы вывода
+           */
+          echo $m . $this->error->getValue();
+          $this->update();
           break;
       }
-      $this->erorr->set($erorr, $mblock, $params);
     }
     return NULL;
   }
 
-  function validate_input(&$input, $required = array(), $other = array()) {
-    foreach (array('access_token', 'application_id', 'language') as $filed)
-      if ((isset($required[$filed]) || isset($other[$filed])) && !isset($input[$filed]))
-        $input[$filed] = '';
-
-    if (isset($input['fields'])) {
-      if (is_array($input['fields']))
-        $input['fields'] = (string) @implode(',', $input['fields']);
+  /**
+   * Валидация входящих параметров для выполняющихся методов
+   * @param array $i Входящие параметры
+   * @param array $r Обезательные параметры
+   * @param array $o Остальные параметры
+   * @return boolean
+   */
+  function validate(&$i, $r = array(), $o = array()) {
+    //Присвоение пустых значений для выполненния автоматических полей
+    foreach (array('access_token', 'application_id', 'language') as $_f)
+      if ((isset($r[$_f]) || isset($o[$_f])) && !isset($i[$_f]))
+        $i[$_f] = '';
+    //обработка списка полей ответа, которые в результате запроса должны быть записаны через запятую.
+    if (isset($i['fields'])) {
+      if (is_array($i['fields']))
+        $i['fields'] = (string) @implode(',', $i['fields']);
       else
-        $input['fields'] = (string) @$input['fields'];
+        $i['fields'] = (string) @$i['fields'];
     }
-
-    foreach ($input as $k => $v)
-      if (!isset($required[$filed]) && !isset($other[$filed]))
-        unset($input[$k]);
-
-    foreach ($required as $filed => $type)
-      if (!isset($input[$filed])) {
-        $this->erorr->set(array('code' => 402, 'field' => $filed, 'message' => strtoupper($filed) . '_NOT_SPECIFIED'));
+    //удаление лишних полей
+    foreach ($i as $_i_ => $_i)
+      if (!isset($r[$_f]) && !isset($o[$_f]))
+        unset($i[$_i_]);
+    //проверка обезательных полей, при ошибки выдает false;
+    foreach ($r as $_r_ => $_r)
+      if (!isset($i[$_r_])) {
+        $this->erorr->set(array('code' => 402, 'field' => $_r_, 'message' => strtoupper($_r_) . '_NOT_SPECIFIED'));
         return false;
       }
-
-    foreach ($required as $filed => $type)
-      if (isset($input[$filed]))
-        switch ($type) {
-          case 'string': $input[$filed] = (string) @$input[$filed];
-            break;
-          case 'timestamp/date':
-          case 'numeric': $input[$filed] = (int) @$input[$filed];
-            break;
-          case 'float': $input[$filed] = (float) @$input[$filed];
-            break;
-          case 'string, list':
-            if (is_array($input[$filed])) {
-              foreach ($input[$filed] as &$value)
-                $value = (string) @$value;
-              $input[$filed] = (string) @implode(',', $input[$filed]);
-            } else {
-              $input[$filed] = (string) @$input[$filed];
-            }
-            break;
-          case 'timestamp/date, list':
-          case 'numeric, list':
-            if (is_array($input[$filed])) {
-              foreach ($input[$filed] as &$value)
-                $value = (int) @$value;
-              $input[$filed] = (string) @implode(',', $input[$filed]);
-            } else {
-              $input[$filed] = (string) @$input[$filed];
-            }
-            break;
-          case 'float, list':
-            if (is_array($input[$filed])) {
-              foreach ($input[$filed] as &$value)
-                $value = (float) @$value;
-              $input[$filed] = (string) @implode(',', $input[$filed]);
-            } else {
-              $input[$filed] = (string) @$input[$filed];
-            }
-            break;
-        }
+    //проверка типов входящих параметров
+    foreach (array($r, $o) as $_t)
+      foreach ($_t as $_r_ => $_r)
+        if (isset($i[$_r_]))
+          switch ($_r) {
+            case 'string': $i[$_r_] = (string) @$i[$_r_];
+              break;
+            case 'timestamp/date':
+            case 'numeric': $i[$_r_] = (int) @$i[$_r_];
+              break;
+            case 'float': $i[$_r_] = (float) @$i[$_r_];
+              break;
+            case 'string, list':
+              if (is_array($i[$_r_])) {
+                //ограничиваем до 100 элементов
+                $i[$_r_] = array_slice($i[$_r_], 0, 100);
+                //проверяем тип значенния
+                foreach ($i[$_r_] as &$_i)
+                  $_i = (string) @$_i;
+                //переводим в строку
+                $i[$_r_] = (string) @implode(',', $i[$_r_]);
+              } else {
+                $i[$_r_] = (string) @$i[$_r_];
+              }
+              break;
+            case 'timestamp/date, list':
+            case 'numeric, list':
+              if (is_array($i[$_r_])) {
+                //ограничиваем до 100 элементов
+                $i[$_r_] = array_slice($i[$_r_], 0, 100);
+                //проверяем тип значенния
+                foreach ($i[$_r_] as &$_i)
+                  $_i = (int) @$_i;
+                //переводим в строку
+                $i[$_r_] = (string) @implode(',', $i[$_r_]);
+              } else {
+                $i[$_r_] = (string) @$i[$_r_];
+              }
+              break;
+            case 'float, list':
+              if (is_array($i[$_r_])) {
+                //ограничиваем до 100 элементов
+                $i[$_r_] = array_slice($i[$_r_], 0, 100);
+                //проверяем тип значенния
+                foreach ($i[$_r_] as &$_i)
+                  $_i = (float) @$_i;
+                //переводим в строку
+                $i[$_r_] = (string) @implode(',', $i[$_r_]);
+              } else {
+                $i[$_r_] = (string) @$i[$_r_];
+              }
+              break;
+          }
     return true;
   }
 
+  /**
+   * Обновление параметров для дочерних классов
+   */
   function updatevar() {
-    $var = (array) @$this;
+    $_v = (array) @$this;
+    //проверка масива наименований методов
     if (count($this->load_class) == 0)
       return false;
-    foreach ($this->load_class as $class) {
-      $load_class = "wgapi_{$this->apiName}_{$class}";
-      if (class_exists($load_class)) {
-        if (isset($this->$class))
-          foreach ($var as $key => $value)
-            if (!empty($value) && $key != 'parent' && !in_array($key, $this->load_class))
-              $this->$class->$key = $value;
-      } else
-        return false;
+    foreach ($this->load_class as $c) {
+      $lc = "wgapi_{$this->apiName}_{$c}";
+      //проверка существования дочернего метода
+      if (class_exists($lc))
+        if (isset($this->$c))
+        //присвоенние дочернему классу переменных
+          foreach ($_v as $__v_ => $__v)
+            if (!empty($__v) && $__v_ != 'parent' && !in_array($__v_, $this->load_class))
+              $this->$c->$__v_ = $__v;
     }
-    return true;
   }
 
+  /**
+   * Обновление файла API Client
+   * @return boolean
+   */
   function update() {
-    $knowledgeBase = $this->send();
-    if (!$knowledgeBase)
+    $_fe = array('list');
+    //Получаем базу знанний
+    $kb = $this->send();
+    if (!$kb)
       return false;
-    $fdata = file_get_contents(__FILE__);
-    $arclass = array_keys($knowledgeBase['category_names']);
-    sort($arclass);
-    $fdata = preg_replace("/load_class \= array\((.*)/i", "load_" . "class = array('" . implode("', '", $arclass) . "');", $fdata);
-    $_pos = strpos($fdata, "// " . "After this line rewrite code");
-    if ($_pos > 0)
-      $fdata = substr($fdata, 0, $_pos);
-    $fdata .= "// " . "After this line rewrite code" . "\n\n\n";
-    $fdata .= "/**\n * {$knowledgeBase['long_name']} \n */\n";
-    $methods = array();
-    $function_exits = array('list');
-    foreach ($knowledgeBase['methods'] as $method) {
-      $documentation = "";
-      $function = "";
-      $functional = "";
-      $url = $method["url"];
-      $function_name = explode('/', $url);
-
-      $input_form_info = array();
-      $input_fields = array();
-      foreach ($method['input_form_info']['fields'] as $fields) {
-        $input_fields[(($fields['required']) ? 'required' : 'other')][$fields['name']] = $fields['doc_type'];
-        $input_form_info[(($fields['required']) ? 'required' : 'other')][] = $fields;
+    //Получаем содержимое файла
+    $fd = file_get_contents(__FILE__);
+    //Определяем масив дочерних объектов
+    $_с_ = array_keys($kb['category_names']);
+    sort($_с_);
+    $fd = preg_replace("/load_class \= array\((.*)/i", "load_" . "class = array('" . implode("', '", $_с_) . "');", $fd);
+    //Удаляем старый код
+    $_rp = strpos($fd, "// " . "After this line rewrite code");
+    if ($_rp > 0)
+      $fd = substr($fd, 0, $_rp);
+    //Добавляем линюю удаления
+    $fd .= "// " . "After this line rewrite code" . "\n\n\n";
+    $fd .= "/**\n * {$kb['long_name']} \n */\n";
+    $m = array();
+    //формируем код методов
+    foreach ($kb['methods'] as $_m) {
+      //функционал
+      $f = "";
+      $url = $_m["url"];
+      $_fn = explode('/', $url);
+      //временное значенние входящих полей
+      $_id = array();
+      $_iv = array();
+      foreach ($_m['input_form_info']['fields'] as $fields) {
+        //масив полейи их типов
+        $_iv[(($fields['required']) ? 'required' : 'other')][$fields['name']] = $fields['doc_type'];
+        //масив полей для документации
+        $_id[(($fields['required']) ? 'required' : 'other')][] = $fields;
       }
-      unset($method['input_form_info']);
-      foreach ($method['errors'] as &$error) {
-        $error[0] = (int) $error[0];
-        $error[1] = (string) $error[1];
-        $error[2] = (string) $error[2];
-        $error = "array({$error[0]}, \"{$error[1]}\", \"{$error[2]}\")";
+      unset($_m['input_form_info']);
+      //создание строки специфических ошибок
+      foreach ($_m['errors'] as &$_er) {
+        $_er[0] = (int) $_er[0];
+        $_er[1] = (string) $_er[1];
+        $_er[2] = (string) $_er[2];
+        $_er = "array({$_er[0]}, \"{$_er[1]}\", \"{$_er[2]}\")";
       }
-      if (count($method['errors']) > 0)
-        $functional .= "\$this->erorr->add(array(" . implode(", ", $method['errors']) . "));\n";
-      unset($method['errors']);
-
-      $protocol = "array()";
-      if (isset($method['allowed_protocols']))
-        if (is_array($method['allowed_protocols']))
-          $protocol = "array('" . implode("', '", $method['allowed_protocols']) . "')";
-      unset($method['allowed_protocols'], $method['allowed_http_methods']);
-
-      foreach ($input_fields as &$type)
-        foreach ($type as $key => &$field) {
-          $field = "'{$key}' => '{$field}'";
+      if (count($_m['errors']) > 0)
+        $f .= "\$this->erorr->add(array(" . implode(", ", $_m['errors']) . "));\n";
+      unset($_m['errors']);
+      //создание строки доступных протоколов
+      $_pr = "array()";
+      if (isset($_m['allowed_protocols']))
+        if (is_array($_m['allowed_protocols']))
+          $_pr = "array('" . implode("', '", $_m['allowed_protocols']) . "')";
+      unset($_m['allowed_protocols'], $_m['allowed_http_methods']);
+      //создание полей для проверки валидации
+      foreach ($_iv as &$type)
+        foreach ($type as $_cn_ => &$field) {
+          $field = "'{$_cn_}' => '{$field}'";
         }
-      $functional .= "if (!\$this->validate_input(\$input, array(" . implode(", ", (array) @$input_fields['required']) . "), array(" . implode(", ", (array) @$input_fields['other']) . ")))\nreturn NULL;\n";
-      unset($input_fields);
-      $documentation .= "{$method['name']}\n";
-      $documentation .= "{$method['description']}\n";
-      $documentation .= "@category {$method['category_name']}\n";
-      $documentation .= "@link {$method['url']}\n";
-      if ($method['deprecated']) {
-        $documentation .= "@todo deprecated\n";
+      $f .= "if (!\$this->validate(\$input, array(" . implode(", ", (array) @$_iv['required']) . "), array(" . implode(", ", (array) @$_iv['other']) . ")))\nreturn NULL;\n";
+      unset($_iv);
+      //документация
+      $d = "";
+      $d .= "{$_m['name']}\n";
+      $d .= "{$_m['description']}\n";
+      $d .= "@category {$_m['category_name']}\n";
+      $d .= "@link {$_m['url']}\n";
+      if ($_m['deprecated']) {
+        $d .= "@todo deprecated\n";
       }
-      $documentation .= "@param array \$input\n";
-      unset($method['name'], $method['url'], $method['description'], $method['category_name'], $method['deprecated']);
-      foreach ($input_form_info as $input_form) {
-        foreach ($input_form as $fields) {
-          $fields['doc_type'] = str_replace(', ', '|', $fields['doc_type']);
-          $documentation .= "@param {$fields['doc_type']} \$input['{$fields['name']}'] {$fields['help_text']}\n";
-          if ($fields['deprecated'])
-            $documentation .= "@todo deprecated \$input['{$fields['name']}'] {$fields['deprecated_text']}\n";
+      $d .= "@param array \$input\n";
+      unset($_m['name'], $_m['url'], $_m['description'], $_m['category_name'], $_m['deprecated']);
+      //описание входящих полей
+      foreach ($_id as $__id)
+        foreach ($__id as $___id) {
+          $___id['doc_type'] = str_replace(', ', '|', $___id['doc_type']);
+          $d .= "@param {$___id['doc_type']} \$input['{$___id['name']}'] {$___id['help_text']}\n";
+          if ($___id['deprecated'])
+            $d .= "@todo deprecated \$input['{$___id['name']}'] {$___id['deprecated_text']}\n";
         }
-      }
 
-      $documentation .= "@return array\n";
-      $documentation .= json_encode($method) . "\n";
-      $documentation = "\n/**\n * " . str_replace(array("\n\n", "&mdash;", "  ", "\n"), array("\n", "-", " ","\n * "), trim($documentation)) . "\n */\n";
-      $functional .= "\$output = \$this->send('{$url}', \$input, {$protocol});\n";
-      $functional .= "return \$output;";
-      $prefix = in_array($function_name[1], $function_exits) ? 's' : '';
-      $function = "function {$function_name[1]}{$prefix} (\$input = array()) {\n{$functional}\n}\n";
-      $methods[$function_name[0]] = (@$methods[$function_name[0]] ? $methods[$function_name[0]] : '') . $documentation . $function;
+      $d .= "@return array\n";
+      //$d .= json_encode($_m) . "\n";
+      //строчные замены в файле
+      $d = "\n/**\n * " . str_replace(array("\n\n", "&mdash;", "\n", "  "), array("\n", "-", "\n * ", " "), trim($d)) . "\n */\n";
+      $f .= "\$output = \$this->send('{$url}', \$input, {$_pr});\n";
+      $f .= "return \$output;";
+      //формирование функций
+      $_pre = in_array($_fn[1], $_fe) ? 's' : '';
+      $f = "function {$_fn[1]}{$_pre} (\$input = array()) {\n{$f}\n}\n";
+      $m[$_fn[0]] = (@$m[$_fn[0]] ? $m[$_fn[0]] : '') . $d . $f;
+      unset($f, $d);
     }
-
-
-    foreach ($knowledgeBase['category_names'] as $key => $name) {
-      $fdata .= "/**\n * {$name} \n */\n";
-      $fdata .= "class wgapi_{$this->apiName}_{$key} extends WgApiCore {\n{$methods[$key]}\n}\n\n";
+    //формирование классов
+    foreach ($kb['category_names'] as $_cn_ => $_cn) {
+      $fd .= "/**\n * {$_cn} \n */\n";
+      $fd .= "class wgapi_{$this->apiName}_{$_cn_} extends WgApiCore {\n{$m[$_cn_]}\n}\n\n";
     }
-    if ($file = @fopen(__FILE__ . '.php', "w")) {
-      fwrite($file, $fdata);
-      fclose($file);
+    //перезапись файлов
+    /**
+     * @todo Убрать заглушку, что бы перезаписывался сам файл
+     */
+    if ($f = @fopen(__FILE__ . '.php', "w")) {
+      fwrite($f, $fd);
+      fclose($f);
     }
+    /**
+     * @todo Убрать все элементы вывода
+     */
     die("API updated!");
     return true;
   }
