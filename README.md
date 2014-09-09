@@ -51,17 +51,14 @@ Wargaming.NET
 
 ## Пример использования методов:
 ````php
-$params = array(
-  'region' => 'RU',
-  'language' => 'ru',
-  'apiStandalone' => '1b7bc64858d79aed49d1bc479248fa1a',
-  'apiServer' => '2cc044ecd33f396b48287cd155c9958d'
-);
-$wot = new Wgapi($params);
-$params = array(
-  'account_id' => 1000000
-);
-$wot->language('en');
+$wot = new Wgapi(array(
+  'region' => 'RU', //регион
+  'language' => 'ru', //язык ответа
+  'apiStandalone' => '171745d21f7f98fd8878771da1000a31', //Ключь автономного приложения
+  'apiServer' => 'd0a293dc77667c9328783d489c8cef73' //Ключь серверного приложения
+));
 
-$output = $wot->account->info($params);
+$output = $wot->account->info(array(
+  'account_id' => 1000000
+));
 ````
