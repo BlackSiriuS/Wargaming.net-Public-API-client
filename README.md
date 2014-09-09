@@ -39,11 +39,29 @@ World of Warplanes
   public $serverDomain = 'api.worldofwarplanes.';
   public $apiName = 'wowp';
 ````
- * Учитывайте что команда авторизации присутствует только в API World of Tanks
+**Учитывайте что команда авторизации присутствует только в API World of Tanks**
 
 
 Wargaming.NET
 ````php
   public $serverDomain = 'api.worldoftanks.';
   public $apiName = 'wgn';
+````
+
+
+## Пример использования методов:
+````php
+$params = array(
+  'region' => 'RU',
+  'language' => 'ru',
+  'apiStandalone' => '1b7bc64858d79aed49d1bc479248fa1a',
+  'apiServer' => '2cc044ecd33f396b48287cd155c9958d'
+);
+$wot = new Wgapi($params);
+$params = array(
+  'account_id' => 1000000
+);
+$wot->language('en');
+
+$output = $wot->account->info($params);
 ````

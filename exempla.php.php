@@ -9,16 +9,17 @@ $params = array(
 );
 $wot = new Wgapi($params);
 $params = array(
-  'account_id' => 14373730
+  'account_id' => 1000000
 );
 $wot->language('en');
-/*
-$output = $wot->account->info($params);
-unset($output[14373730]['achievements']);
-var_dump($output[14373730]);*/
 
+$output = $wot->account->info($params);
+unset($output[1000000]['achievements']);
+var_dump($output[1000000]);
+/*
 $params = array(
   'redirect_uri' =>'http://localhost/World-of-Tanks-API-client/exempla.php.php'
 );
 $output = $wot->auth->login($params);
 var_dump($output);
+*/

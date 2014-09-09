@@ -1,170 +1,11 @@
 <?php
 
 /**
- * Wgapi
- * 
- * Набор общедоступных методов API, которые предоставляют доступ к проектам Wargaming.net, включая игровой контент, статистику игроков, данные энциклопедии и многое другое.
- * 
- * @author Serg Auer <auerserg@gmail.com>
- * @version 1.0
- */
-class Wgapi extends WgapiCore {
-
-  /**
-   * Параметр определяющий что данный класс является главным/первичным
-   * @var boolean 
-   */
-  public $parent = true;
-
-  /**
-   * Выполняет загрузку вторичных классов, при их отсутствии выполняет обновляет данный файл.
-   * @return boolean
-   */
-  function load() {
-    //загрузка класса ошибок
-    $this->erorr = new WgApiError();
-    //проверка масива наименований методов
-    if (count($this->load_class) == 0)
-      return $this->update();
-    //загрузка дочерних классов по наименованию метода
-    foreach ($this->load_class as $_c) {
-      $lc = "wgapi_{$this->apiName}_{$_c}";
-      //проверка существования дочернего метода
-      if (class_exists($lc)) {
-        $this->$_c = new $lc($this);
-      } else {
-        /**
-         * @todo Убрать все элементы вывода
-         */
-        echo "class not found '{$lc}'; \n";
-        $this->update();
-      }
-    }
-    return true;
-  }
-
-}
-
-/**
- * WgApiError
- * 
- * Класс, хранящий в себе все ошибки полученные при выполнение запросов API
- * 
- * @author Serg Auer <auerserg@gmail.com>
- * @version 1.4
- */
-class WgApiError {
-
-  /**
-   * Код ошибки
-   * @var integer 
-   */
-  public $code = 0;
-
-  /**
-   * Поле из-за, которого возникла ошибка
-   * @var string
-   */
-  public $field = '';
-
-  /**
-   * Сообщение ошибки
-   * @var string 
-   */
-  public $message = '';
-
-  /**
-   * Описание ошибки для вывода пользователю
-   * @var string 
-   */
-  public $value = '';
-
-  /**
-   * Устанавливает первичный словарь ошибок для возможности обработки описания
-   */
-  function __construct() {
-    //первичный словарь ошибок
-    $this->dictionary = array(
-      array(402, '%FIELD%_NOT_SPECIFIED', 'Не заполнено обязательное поле %FIELD%.'),
-      array(404, '%FIELD%_NOT_FOUND', 'Информация не найдена.'),
-      array(404, 'METHOD_NOT_FOUND', 'Указан неверный метод API.'),
-      array(405, 'METHOD_DISABLED', 'Указаный метод API отключён.'),
-      array(407, '%FIELD%_LIST_LIMIT_EXCEEDED', 'Превышен лимит переданных идентификаторов в поле %FIELD%.'),
-      array(407, 'APPLICATION_IS_BLOCKED', 'Приложение заблокировано администрацией.'),
-      array(407, 'INVALID_%FIELD%', 'Указано не валидное значение параметра %FIELD%.'),
-      array(407, 'INVALID_APPLICATION_ID', 'Неверный идентификатор приложения.'),
-      array(407, 'INVALID_IP_ADDRESS', 'Недопустимый IP-адрес для серверного приложения.'),
-      array(407, 'REQUEST_LIMIT_EXCEEDED', 'Превышены лимиты квотирования.'),
-      array(504, 'SOURCE_NOT_AVAILABLE', 'Источник данных не доступен.'),
-    );
-  }
-
-  /**
-   * Добавления ошибок в словарь
-   * @param array $er Масив ошибок @example array(array(code, message, value))
-   * @return array Новый словарь ошибок
-   */
-  function add($er = array()) {
-    //добавление нескольких ошибок в цикле
-    foreach ($er as $_er)
-      $this->dictionary[] = $_er;
-    return $this->dictionary;
-  }
-
-  /**
-   * Добавления события ошибки для вывода пользователю
-   * @param array $er Масив ошибок @example array(code, message, value)
-   * @param string $url Метод в котором возникла ошибка
-   * @param array $p Параметры метода с которыми возникли ошибки
-   * @return NULL
-   */
-  function set($er = array(), $url = '', $p = array()) {
-    //устанавливет значенния для класса
-    foreach ($er as $_er_ => $_er)
-      $this->$_er_ = $_er;
-    $this->url = $url;
-    $this->params = $p;
-    //поиск описания ошибки 
-    foreach ($this->dictionary as $_er)
-      if ($_er[0] == $this->code && str_replace('%FIELD%', strtoupper($this->field), $_er[1]) == $this->message) {
-        $this->value = str_replace('%FIELD%', '"' . $this->field . '"', $_er[2]);
-        break;
-      }
-    return NULL;
-  }
-
-  /**
-   * Вывод значение ошибки
-   * @return string
-   */
-  function getMessage() {
-    return $this->message;
-  }
-
-  /**
-   * Вывод описания ошибки
-   * @return string
-   */
-  function getValue() {
-    return $this->value;
-  }
-
-  /**
-   * Выводит масив ошибки со всеми параметрами
-   * @return array
-   */
-  function get() {
-    return array($this->code, $this->message, $this->value);
-  }
-
-}
-
-/**
  * WgApiCore
  * Класс хранящий в себе все основные методы для работы основного и дочернего класса
  * 
  * @author Serg Auer <auerserg@gmail.com>
- * @version 2.7
+ * @version 3.0
  */
 class WgApiCore {
 
@@ -653,6 +494,165 @@ class WgApiCore {
      */
     die("API updated!");
     return true;
+  }
+
+}
+
+/**
+ * Wgapi
+ * 
+ * Набор общедоступных методов API, которые предоставляют доступ к проектам Wargaming.net, включая игровой контент, статистику игроков, данные энциклопедии и многое другое.
+ * 
+ * @author Serg Auer <auerserg@gmail.com>
+ * @version 1.0
+ */
+class Wgapi extends WgapiCore {
+
+  /**
+   * Параметр определяющий что данный класс является главным/первичным
+   * @var boolean 
+   */
+  public $parent = true;
+
+  /**
+   * Выполняет загрузку вторичных классов, при их отсутствии выполняет обновляет данный файл.
+   * @return boolean
+   */
+  function load() {
+    //загрузка класса ошибок
+    $this->erorr = new WgApiError();
+    //проверка масива наименований методов
+    if (count($this->load_class) == 0)
+      return $this->update();
+    //загрузка дочерних классов по наименованию метода
+    foreach ($this->load_class as $_c) {
+      $lc = "wgapi_{$this->apiName}_{$_c}";
+      //проверка существования дочернего метода
+      if (class_exists($lc)) {
+        $this->$_c = new $lc($this);
+      } else {
+        /**
+         * @todo Убрать все элементы вывода
+         */
+        echo "class not found '{$lc}'; \n";
+        $this->update();
+      }
+    }
+    return true;
+  }
+
+}
+
+/**
+ * WgApiError
+ * 
+ * Класс, хранящий в себе все ошибки полученные при выполнение запросов API
+ * 
+ * @author Serg Auer <auerserg@gmail.com>
+ * @version 1.4
+ */
+class WgApiError {
+
+  /**
+   * Код ошибки
+   * @var integer 
+   */
+  public $code = 0;
+
+  /**
+   * Поле из-за, которого возникла ошибка
+   * @var string
+   */
+  public $field = '';
+
+  /**
+   * Сообщение ошибки
+   * @var string 
+   */
+  public $message = '';
+
+  /**
+   * Описание ошибки для вывода пользователю
+   * @var string 
+   */
+  public $value = '';
+
+  /**
+   * Устанавливает первичный словарь ошибок для возможности обработки описания
+   */
+  function __construct() {
+    //первичный словарь ошибок
+    $this->dictionary = array(
+      array(402, '%FIELD%_NOT_SPECIFIED', 'Не заполнено обязательное поле %FIELD%.'),
+      array(404, '%FIELD%_NOT_FOUND', 'Информация не найдена.'),
+      array(404, 'METHOD_NOT_FOUND', 'Указан неверный метод API.'),
+      array(405, 'METHOD_DISABLED', 'Указаный метод API отключён.'),
+      array(407, '%FIELD%_LIST_LIMIT_EXCEEDED', 'Превышен лимит переданных идентификаторов в поле %FIELD%.'),
+      array(407, 'APPLICATION_IS_BLOCKED', 'Приложение заблокировано администрацией.'),
+      array(407, 'INVALID_%FIELD%', 'Указано не валидное значение параметра %FIELD%.'),
+      array(407, 'INVALID_APPLICATION_ID', 'Неверный идентификатор приложения.'),
+      array(407, 'INVALID_IP_ADDRESS', 'Недопустимый IP-адрес для серверного приложения.'),
+      array(407, 'REQUEST_LIMIT_EXCEEDED', 'Превышены лимиты квотирования.'),
+      array(504, 'SOURCE_NOT_AVAILABLE', 'Источник данных не доступен.'),
+    );
+  }
+
+  /**
+   * Добавления ошибок в словарь
+   * @param array $er Масив ошибок @example array(array(code, message, value))
+   * @return array Новый словарь ошибок
+   */
+  function add($er = array()) {
+    //добавление нескольких ошибок в цикле
+    foreach ($er as $_er)
+      $this->dictionary[] = $_er;
+    return $this->dictionary;
+  }
+
+  /**
+   * Добавления события ошибки для вывода пользователю
+   * @param array $er Масив ошибок @example array(code, message, value)
+   * @param string $url Метод в котором возникла ошибка
+   * @param array $p Параметры метода с которыми возникли ошибки
+   * @return NULL
+   */
+  function set($er = array(), $url = '', $p = array()) {
+    //устанавливет значенния для класса
+    foreach ($er as $_er_ => $_er)
+      $this->$_er_ = $_er;
+    $this->url = $url;
+    $this->params = $p;
+    //поиск описания ошибки 
+    foreach ($this->dictionary as $_er)
+      if ($_er[0] == $this->code && str_replace('%FIELD%', strtoupper($this->field), $_er[1]) == $this->message) {
+        $this->value = str_replace('%FIELD%', '"' . $this->field . '"', $_er[2]);
+        break;
+      }
+    return NULL;
+  }
+
+  /**
+   * Вывод значение ошибки
+   * @return string
+   */
+  function getMessage() {
+    return $this->message;
+  }
+
+  /**
+   * Вывод описания ошибки
+   * @return string
+   */
+  function getValue() {
+    return $this->value;
+  }
+
+  /**
+   * Выводит масив ошибки со всеми параметрами
+   * @return array
+   */
+  function get() {
+    return array($this->code, $this->message, $this->value);
   }
 
 }
