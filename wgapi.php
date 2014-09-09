@@ -164,7 +164,7 @@ class WgApiError {
  * Класс хранящий в себе все основные методы для работы основного и дочернего класса
  * 
  * @author Serg Auer <auerserg@gmail.com>
- * @version 2.7
+ * @version 2.9
  */
 class WgApiCore {
 
@@ -587,7 +587,7 @@ class WgApiCore {
         $_er = "array({$_er[0]}, \"{$_er[1]}\", \"{$_er[2]}\")";
       }
       if (count($_m['errors']) > 0)
-        $f .= "\$this->erorr->add(array(" . implode(", ", $_m['errors']) . "));\n";
+        $f .= "    \$this->erorr->add(array(" . implode(", ", $_m['errors']) . "));\n";
       unset($_m['errors']);
       //создание строки доступных протоколов
       $_pr = "array()";
@@ -600,7 +600,7 @@ class WgApiCore {
         foreach ($type as $_cn_ => &$field) {
           $field = "'{$_cn_}' => '{$field}'";
         }
-      $f .= "if (!\$this->validate(\$input, array(" . implode(", ", (array) @$_iv['required']) . "), array(" . implode(", ", (array) @$_iv['other']) . ")))\nreturn NULL;\n";
+      $f .= "    if (!\$this->validate(\$i, array(" . implode(", ", (array) @$_iv['required']) . "), array(" . implode(", ", (array) @$_iv['other']) . "))) return NULL;\n";
       unset($_iv);
       //документация
       $d = "";
@@ -616,7 +616,7 @@ class WgApiCore {
       //описание входящих полей
       foreach ($_id as $__id)
         foreach ($__id as $___id) {
-          $___id['doc_type'] = str_replace(', ', '|', $___id['doc_type']);
+          $___id['doc_type'] = str_replace(array(', ', 'numeric', 'list'), array('|', 'integer', 'array'), $___id['doc_type']);
           $d .= "@param {$___id['doc_type']} \$input['{$___id['name']}'] {$___id['help_text']}\n";
           if ($___id['deprecated'])
             $d .= "@todo deprecated \$input['{$___id['name']}'] {$___id['deprecated_text']}\n";
@@ -625,19 +625,20 @@ class WgApiCore {
       $d .= "@return array\n";
       //$d .= json_encode($_m) . "\n";
       //строчные замены в файле
-      $d = "\n/**\n * " . str_replace(array("\n\n", "&mdash;", "\n", "  "), array("\n", "-", "\n * ", " "), trim($d)) . "\n */\n";
-      $f .= "\$output = \$this->send('{$url}', \$input, {$_pr});\n";
-      $f .= "return \$output;";
+      $d = "\n  /**\n   * " . str_replace(array("\n\n", "&mdash;", "\n", "  "), array("\n", "-", "\n     * ", " "), trim($d)) . "\n   */\n";
+      $f .= "    \$o = \$this->send('{$url}', \$i, {$_pr});\n";
+      $f .= "    return \$o;";
       //формирование функций
       $_pre = in_array($_fn[1], $_fe) ? 's' : '';
-      $f = "function {$_fn[1]}{$_pre} (\$input = array()) {\n{$f}\n}\n";
+      $f = "  function {$_fn[1]}{$_pre} (\$i = array()) {\n{$f}\n  }\n";
       $m[$_fn[0]] = (@$m[$_fn[0]] ? $m[$_fn[0]] : '') . $d . $f;
       unset($f, $d);
     }
     //формирование классов
     foreach ($kb['category_names'] as $_cn_ => $_cn) {
       $fd .= "/**\n * {$_cn} \n */\n";
-      $fd .= "class wgapi_{$this->apiName}_{$_cn_} extends WgApiCore {\n{$m[$_cn_]}\n}\n\n";
+      if (isset($m[$_cn_]))
+        $fd .= "class wgapi_{$this->apiName}_{$_cn_} extends WgApiCore {\n{$m[$_cn_]}\n}\n\n";
     }
     //перезапись файлов
     /**
