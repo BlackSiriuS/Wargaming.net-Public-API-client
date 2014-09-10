@@ -73,7 +73,7 @@ class WgApiCore {
    * Список доступных методов и дочерних класов для подгрузки
    * @var array 
    */
-  public $load_class = array('account', 'auth', 'clan', 'encyclopedia', 'globalwar', 'ratings', 'tanks');
+  public $load_class = array('league', 'wargag');
 
   /**
    * Присвоение первичных параметров для функционально класса
@@ -687,3 +687,137 @@ class WgApiError {
   }
 
 }
+// After this line rewrite code
+
+
+/**
+ * Wargaming.net 
+ */
+/**
+ * WG League 
+ */
+class wgapi_wgn_league extends WgApiCore {
+
+}
+
+/**
+ * Wargag 
+ */
+class wgapi_wgn_wargag extends WgApiCore {
+
+  /**
+   * Список контента
+   * Возвращает информацию о контенте.
+   * @category Wargag
+   * @link wargag/content
+   * @param array $input
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param string $input['type'] Тип контента. Допустимые значения: 
+   * * "quote" - тип контента Цитаты 
+   * * "video" - тип контента Видео 
+   * * "picture" - тип контента Картинки 
+   * @param timestamp/date $input['date'] Дата публикации
+   * @param integer $input['category_id'] Идентификатор категории
+   * @param integer $input['tag_id'] Идентификатор тега
+   * @param integer $input['rating_threshold'] Пороговое значение рейтинга контента
+   * @param integer $input['account_id'] Идентификатор аккаунта-автора контента
+   * @param integer $input['page_no'] Номер страницы выдачи
+   * @param string $input['order_by'] Вид сортировки. Допустимые значения: 
+   * * "date" - по дате публикации 
+   * * "-date" - по дате публикации в обратном порядке (используется по умолчанию)
+   * * "rating" - по значению рейтинга 
+   * * "-rating" - по значению рейтинга в обратном порядке 
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function content ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string'), array('fields' => 'string', 'type' => 'string', 'date' => 'timestamp/date', 'category_id' => 'numeric', 'tag_id' => 'numeric', 'rating_threshold' => 'numeric', 'account_id' => 'numeric', 'page_no' => 'numeric', 'order_by' => 'string'))) return NULL;
+    $o = $this->send('wargag/content', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * Поиск контента
+   * Текстовый поиск по контенту.
+   * @category Wargag
+   * @link wargag/search
+   * @param array $input
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['q'] Текст для поиска по контенту, минимальная длина 3 символа, поиск без учета регистра
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param string $input['type'] Тип контента. Допустимые значения: 
+   * * "quote" - тип контента Цитаты 
+   * * "video" - тип контента Видео 
+   * * "picture" - тип контента Картинки 
+   * @param integer $input['category_id'] Идентификатор категории
+   * @param integer $input['tag_id'] Идентификатор тега
+   * @param integer $input['rating_threshold'] Пороговое значение рейтинга контента
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function search ($i = array()) {
+    $this->erorr->add(array(array(402, "Q_NOT_SPECIFIED", ""), array(407, "NOT_ENOUGH_Q_LENGTH", "")));
+    if (!$this->validate($i, array('application_id' => 'string', 'q' => 'string'), array('fields' => 'string', 'type' => 'string', 'category_id' => 'numeric', 'tag_id' => 'numeric', 'rating_threshold' => 'numeric'))) return NULL;
+    $o = $this->send('wargag/search', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * Список комментариев к контенту
+   * Возвращает список комментариев к контенту.
+   * @category Wargag
+   * @link wargag/comments
+   * @param array $input
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param integer $input['content_id'] Идентификатор контента
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param integer $input['page_no'] Номер страницы выдачи
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function comments ($i = array()) {
+    $this->erorr->add(array(array(404, "CONTENT_ID_NOT_FOUND", "")));
+    if (!$this->validate($i, array('application_id' => 'string', 'content_id' => 'numeric'), array('fields' => 'string', 'page_no' => 'numeric'))) return NULL;
+    $o = $this->send('wargag/comments', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * Информация о категориях
+   * Возвращает информацию о категориях.
+   * @category Wargag
+   * @link wargag/categories
+   * @param array $input
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['type'] Тип контента. Допустимые значения: 
+   * * "video" - категория Видео 
+   * * "picture" - категория Картинки 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param integer $input['category_id'] Идентификатор категории
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function categories ($i = array()) {
+    $this->erorr->add(array(array(404, "CATEGORY_ID_NOT_FOUND", "")));
+    if (!$this->validate($i, array('application_id' => 'string', 'type' => 'string'), array('fields' => 'string', 'category_id' => 'numeric'))) return NULL;
+    $o = $this->send('wargag/categories', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * Информация о тэгах
+   * Возвращает информацию о тэгах.
+   * @category Wargag
+   * @link wargag/tags
+   * @param array $input
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param integer $input['tag_id'] Идентификатор тега
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function tags ($i = array()) {
+    $this->erorr->add(array(array(404, "TAG_ID_NOT_FOUND", "")));
+    if (!$this->validate($i, array('application_id' => 'string'), array('fields' => 'string', 'tag_id' => 'numeric'))) return NULL;
+    $o = $this->send('wargag/tags', $i, array('http', 'https'));
+    return $o;
+  }
+
+}
+

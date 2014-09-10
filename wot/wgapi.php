@@ -5,7 +5,7 @@
  * Класс хранящий в себе все основные методы для работы основного и дочернего класса
  * 
  * @author Serg Auer <auerserg@gmail.com>
- * @version 3.0
+ * @version 3.4
  */
 class WgApiCore {
 
@@ -264,15 +264,50 @@ class WgApiCore {
         //выполняем обновление клиента
         case 'METHOD_DISABLED':
         case 'METHOD_NOT_FOUND':
-          /**
-           * @todo Убрать все элементы вывода
-           */
-          echo $m . $this->error->getValue();
           $this->update();
           break;
       }
     }
     return NULL;
+  }
+
+  /**
+   * Перенаправление на запрос API.
+   * @param string $pr протокол
+   * @param string $b название группы методов
+   * @param string $m название метода
+   * @param string $mr метод перенаправление
+   * @param integer $c код перенаправления
+   */
+  function redirect($m = '', $p = array(), $pr = array(), $mr = 'location', $c = 302) {
+    //определение токена авторизации
+    if (isset($p['access_token']) && empty($p['access_token']))
+      $p['access_token'] = (isset($this->token) && !empty($this->token)) ? $this->token : '';
+    //удаление токена авторизации при его пустом значении
+    if (isset($p['access_token']) && empty($p['access_token']))
+      unset($p['access_token']);
+    //флаг авторизировано пользователя
+    $_wt = (isset($p['access_token']) && !empty($p['access_token']));
+    //выбор протокола
+    $pr = $this->protocol($pr, $_wt);
+    //определение ключа приложенния
+    if (isset($p['application_id']) && empty($p['application_id']))
+      $p['application_id'] = $_wt ? $this->apiStandalone : $this->apiServer;
+    //определение языка вывода
+    if (isset($p['language']) && empty($p['language']))
+      $p['language'] = $this->language;
+    unset($_wt);
+    $uri = $this->setURL($pr, $m) . "?" . http_build_query($p);
+    //выбор метода перенаправления
+    switch ($mr) {
+      case 'refresh' : header("Refresh:0;url=" . $uri);
+        break;
+      case 'return' : return $uri;
+        break;
+      default : header("Location: " . $uri, TRUE, $c);
+        break;
+    }
+    exit;
   }
 
   /**
@@ -296,7 +331,7 @@ class WgApiCore {
     }
     //удаление лишних полей
     foreach ($i as $_i_ => $_i)
-      if (!isset($r[$_f]) && !isset($o[$_f]))
+      if (!isset($r[$_i_]) && !isset($o[$_i_]))
         unset($i[$_i_]);
     //проверка обезательных полей, при ошибки выдает false;
     foreach ($r as $_r_ => $_r)
@@ -441,6 +476,8 @@ class WgApiCore {
         foreach ($type as $_cn_ => &$field) {
           $field = "'{$_cn_}' => '{$field}'";
         }
+      if ($_fn[1] == "login")
+        $f .= "    \$mr = isset(\$i['return']) ? 'return' : 'location';\n";
       $f .= "    if (!\$this->validate(\$i, array(" . implode(", ", (array) @$_iv['required']) . "), array(" . implode(", ", (array) @$_iv['other']) . "))) return NULL;\n";
       unset($_iv);
       //документация
@@ -463,11 +500,13 @@ class WgApiCore {
             $d .= "@todo deprecated \$input['{$___id['name']}'] {$___id['deprecated_text']}\n";
         }
 
-      $d .= "@return array\n";
+      $d .= "@return array|NULL При возникновенние ошибки выдает NULL.\n";
       //$d .= json_encode($_m) . "\n";
       //строчные замены в файле
       $d = "\n  /**\n   * " . str_replace(array("\n\n", "&mdash;", "\n", "  "), array("\n", "-", "\n     * ", " "), trim($d)) . "\n   */\n";
-      $f .= "    \$o = \$this->send('{$url}', \$i, {$_pr});\n";
+      if ($_fn[1] == "login")
+        $f .= "    if (!isset(\$i['redirect_uri']) || empty(\$i['redirect_uri'])) \$i['redirect_uri'] = \$_SERVER['REQUEST_SCHEME'] . '://' . \$_SERVER['HTTP_HOST'] . \$_SERVER['REQUEST_URI'];\n    \$n = get_called_class();\n    if (preg_match('/\?/i', \$i['redirect_uri'])) \$i['redirect_uri'] .= '&' . \$n . '=' . __FUNCTION__;\n    else \$i['redirect_uri'] .= '?' . \$n . '=' . __FUNCTION__;\n    \$o = \$_REQUEST;\n    if (isset(\$o[\$n]) && \$o[\$n] == 'login') {\n      unset(\$o[\$n]);\n      //при отсутствие статуса выводим полученный масив\n      if (!isset(\$o['status'])) return \$o;\n      //при верном статусе возвращаем данные\n      if (\$o['status'] == 'ok') { unset(\$o['status']); return \$o;}\n      //при ошибки переводим обработчик ошибок\n      \$er = \$o;\n      //присвоенние ошибки\n      \$this->erorr->set(\$er, '{$url}', \$i);\n      switch ((string) \$er['message']) {\n        //выполняем обновление клиента\n        case 'METHOD_DISABLED':\n        case 'METHOD_NOT_FOUND': \$this->update(); break;\n      }\n      return NULL;\n    }\n";
+      $f .= "    \$o = \$this->" . (($_fn[1] == "login") ? "redirect" : "send") . "('{$url}', \$i, {$_pr}" . (($_fn[1] == "login") ? ", \$mr" : "") . ");\n";
       $f .= "    return \$o;";
       //формирование функций
       $_pre = in_array($_fn[1], $_fe) ? 's' : '';
@@ -478,14 +517,11 @@ class WgApiCore {
     //формирование классов
     foreach ($kb['category_names'] as $_cn_ => $_cn) {
       $fd .= "/**\n * {$_cn} \n */\n";
-      if (isset($m[$_cn_]))
-        $fd .= "class wgapi_{$this->apiName}_{$_cn_} extends WgApiCore {\n{$m[$_cn_]}\n}\n\n";
+      $fmm = (string) @$m[$_cn_];
+      $fd .= "class wgapi_{$this->apiName}_{$_cn_} extends WgApiCore {\n{$fmm}\n}\n\n";
     }
     //перезапись файлов
-    /**
-     * @todo Убрать заглушку, что бы перезаписывался сам файл
-     */
-    if ($f = @fopen(__FILE__ . '.php', "w")) {
+    if ($f = @fopen(__FILE__, "w")) {
       fwrite($f, $fd);
       fclose($f);
     }
@@ -528,15 +564,10 @@ class Wgapi extends WgapiCore {
     foreach ($this->load_class as $_c) {
       $lc = "wgapi_{$this->apiName}_{$_c}";
       //проверка существования дочернего метода
-      if (class_exists($lc)) {
+      if (class_exists($lc))
         $this->$_c = new $lc($this);
-      } else {
-        /**
-         * @todo Убрать все элементы вывода
-         */
-        echo "class not found '{$lc}'; \n";
+      else
         $this->update();
-      }
     }
     return true;
   }
@@ -701,7 +732,7 @@ class wgapi_wot_clan extends WgApiCore {
    * * "abbreviation" - по тегу клана 
    * * "-abbreviation" - по тегу клана в обратном порядке 
    * @param integer $input['page_no'] Номер страницы выдачи
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function lists ($i = array()) {
     $this->erorr->add(array(array(402, "SEARCH_NOT_SPECIFIED", "Не указан обязательный параметр **search**"), array(407, "NOT_ENOUGH_SEARCH_LENGTH", "Недостаточная длина параметра **search**. Минимум 3 символа")));
@@ -733,7 +764,7 @@ class wgapi_wot_clan extends WgApiCore {
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function info ($i = array()) {
     $this->erorr->add(array(array(407, "CLAN_ID_LIST_LIMIT_EXCEEDED", "Лимит переданных идентификаторов **clan_id** превышен ( >100 )")));
@@ -767,7 +798,7 @@ class wgapi_wot_clan extends WgApiCore {
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
    * @param integer $input['map_id'] Идентификатор карты
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function battles ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'clan_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string', 'access_token' => 'string', 'map_id' => 'numeric'))) return NULL;
@@ -801,7 +832,7 @@ class wgapi_wot_clan extends WgApiCore {
    * @param string $input['time'] Временной промежуток. Допустимые значения: 
    * * "current_season" - Текущее событие (используется по умолчанию)
    * * "current_step" - Текущий этап 
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function top ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'map_id' => 'string', 'time' => 'string'))) return NULL;
@@ -832,7 +863,7 @@ class wgapi_wot_clan extends WgApiCore {
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function provinces ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'clan_id' => 'numeric'), array('language' => 'string', 'fields' => 'string', 'access_token' => 'string'))) return NULL;
@@ -863,7 +894,7 @@ class wgapi_wot_clan extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function victorypoints ($i = array()) {
     $this->erorr->add(array(array(407, "CLAN_ID_LIST_LIMIT_EXCEEDED", "Лимит переданных идентификаторов **clan_id** превышен ( >100 )")));
@@ -900,7 +931,7 @@ class wgapi_wot_clan extends WgApiCore {
    * @param timestamp/date $input['until'] Конец периода
    * @param integer $input['offset'] Сдвиг относительно первого результата
    * @param integer $input['limit'] Кол-во результатов (от 20 до 100)
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function victorypointshistory ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'clan_id' => 'numeric'), array('language' => 'string', 'fields' => 'string', 'map_id' => 'numeric', 'since' => 'timestamp/date', 'until' => 'timestamp/date', 'offset' => 'numeric', 'limit' => 'numeric'))) return NULL;
@@ -929,7 +960,7 @@ class wgapi_wot_clan extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function membersinfo ($i = array()) {
     $this->erorr->add(array(array(407, "MEMBER_ID_LIST_LIMIT_EXCEEDED", "Лимит переданных идентификаторов **member_id** превышен ( >100 )")));
@@ -966,7 +997,7 @@ class wgapi_wot_ratings extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function types ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string'))) return NULL;
@@ -1002,7 +1033,7 @@ class wgapi_wot_ratings extends WgApiCore {
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param timestamp/date $input['date'] Дата в формате UNIX timestamp либо ISO 8601. Например, 1376542800 либо 2013-08-15T00:00:00
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function accounts ($i = array()) {
     $this->erorr->add(array(array(402, "ACCOUNT_ID_NOT_SPECIFIED", "**account_id** не указан"), array(402, "TYPE_NOT_SPECIFIED", "**type** не указан"), array(407, "INVALID_TYPE", "Указан неверный **type**"), array(404, "RATINGS_NOT_FOUND", "Нет рейтинговых данных за указанную дату")));
@@ -1041,7 +1072,7 @@ class wgapi_wot_ratings extends WgApiCore {
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param timestamp/date $input['date'] Дата в формате UNIX timestamp либо ISO 8601. Например, 1376542800 либо 2013-08-15T00:00:00
    * @param integer $input['limit'] Лимит количества соседей
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function neighbors ($i = array()) {
     $this->erorr->add(array(array(402, "ACCOUNT_ID_NOT_SPECIFIED", "**account_id** не указан"), array(402, "TYPE_NOT_SPECIFIED", "**type** не указан"), array(407, "INVALID_TYPE", "Указан неверный **type**"), array(402, "RANK_FIELD_NOT_SPECIFIED", "**rank_field** не указан"), array(407, "INVALID_RANK_FIELD", "Указан неверный **rank_field**"), array(404, "RATINGS_NOT_FOUND", "Нет рейтинговых данных за указанную дату")));
@@ -1079,7 +1110,7 @@ class wgapi_wot_ratings extends WgApiCore {
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param timestamp/date $input['date'] Дата в формате UNIX timestamp либо ISO 8601. Например, 1376542800 либо 2013-08-15T00:00:00
    * @param integer $input['limit'] Лимит количества игроков в топе
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function top ($i = array()) {
     $this->erorr->add(array(array(402, "TYPE_NOT_SPECIFIED", "**type** не указан"), array(407, "INVALID_TYPE", "Указан неверный **type**"), array(402, "RANK_FIELD_NOT_SPECIFIED", "**rank_field** не указан"), array(407, "INVALID_RANK_FIELD", "Указан неверный **rank_field**"), array(404, "RATINGS_NOT_FOUND", "Нет рейтинговых данных за указанную дату")));
@@ -1115,7 +1146,7 @@ class wgapi_wot_ratings extends WgApiCore {
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param integer|array $input['account_id'] Идентификатор аккаунта игрока
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function dates ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'type' => 'string'), array('language' => 'string', 'fields' => 'string', 'account_id' => 'numeric, list'))) return NULL;
@@ -1160,7 +1191,7 @@ class wgapi_wot_account extends WgApiCore {
    * * "startswith" - Поиск по начальной части имени игрока. Минимальная длина 3 символа, поиск без учета регистра (используется по умолчанию)
    * * "exact" - Поиск по строгому соответствию имени игрока. Минимальная длина строки поиска 1 символ, поиск без учета регистра 
    * @param integer $input['limit'] Количество возвращаемых записей. Максимальное количество: 100. Если значение неверно или превышает 100, то по умолчанию возвращается 100 записей.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function lists ($i = array()) {
     $this->erorr->add(array(array(402, "SEARCH_NOT_SPECIFIED", "Не указан обязательный параметр **search**"), array(407, "NOT_ENOUGH_SEARCH_LENGTH", "Недостаточная длина параметра **search**. Минимум 3 символа")));
@@ -1192,7 +1223,7 @@ class wgapi_wot_account extends WgApiCore {
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function info ($i = array()) {
     $this->erorr->add(array(array(407, "ACCOUNT_ID_LIST_LIMIT_EXCEEDED", "Лимит переданных идентификаторов **account_id** превышен ( >100 )")));
@@ -1225,7 +1256,7 @@ class wgapi_wot_account extends WgApiCore {
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
    * @param integer|array $input['tank_id'] Идентификатор танка игрока
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function tanks ($i = array()) {
     $this->erorr->add(array(array(407, "ACCOUNT_ID_LIST_LIMIT_EXCEEDED", "Лимит переданных идентификаторов **account_id** превышен ( >100 )")));
@@ -1260,7 +1291,7 @@ class wgapi_wot_account extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function achievements ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'account_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string'))) return NULL;
@@ -1299,7 +1330,7 @@ class wgapi_wot_globalwar extends WgApiCore {
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param integer $input['limit'] Количество возвращаемых записей. Максимальное количество: 100. Если значение неверно или превышает 100, то по умолчанию возвращается 100 записей.
    * @param integer $input['page_no'] Номер страницы выдачи
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function clans ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'limit' => 'numeric', 'page_no' => 'numeric'))) return NULL;
@@ -1330,7 +1361,7 @@ class wgapi_wot_globalwar extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function famepoints ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'account_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string'))) return NULL;
@@ -1359,7 +1390,7 @@ class wgapi_wot_globalwar extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function maps ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string'))) return NULL;
@@ -1390,7 +1421,7 @@ class wgapi_wot_globalwar extends WgApiCore {
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param string|array $input['province_id'] Идентификатор провинции
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function provinces ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'province_id' => 'string, list'))) return NULL;
@@ -1424,7 +1455,7 @@ class wgapi_wot_globalwar extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function top ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'order_by' => 'string'), array('language' => 'string', 'fields' => 'string'))) return NULL;
@@ -1455,7 +1486,7 @@ class wgapi_wot_globalwar extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function tournaments ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'province_id' => 'string'), array('language' => 'string', 'fields' => 'string'))) return NULL;
@@ -1490,7 +1521,7 @@ class wgapi_wot_globalwar extends WgApiCore {
    * @param timestamp/date $input['until'] Конец периода
    * @param integer $input['page_no'] Номер страницы выдачи
    * @param integer $input['limit'] Количество возвращаемых записей. Максимальное количество: 100. Если значение неверно или превышает 100, то по умолчанию возвращается 100 записей.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function famepointshistory ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'access_token' => 'string'), array('language' => 'string', 'fields' => 'string', 'since' => 'timestamp/date', 'until' => 'timestamp/date', 'page_no' => 'numeric', 'limit' => 'numeric'))) return NULL;
@@ -1522,7 +1553,7 @@ class wgapi_wot_globalwar extends WgApiCore {
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param integer $input['page_no'] Номер страницы выдачи
    * @param integer $input['limit'] Количество возвращаемых записей. Максимальное количество: 100. Если значение неверно или превышает 100, то по умолчанию возвращается 100 записей.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function alleyoffame ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'page_no' => 'numeric', 'limit' => 'numeric'))) return NULL;
@@ -1554,7 +1585,7 @@ class wgapi_wot_globalwar extends WgApiCore {
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function battles ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'clan_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string', 'access_token' => 'string'))) return NULL;
@@ -1589,7 +1620,7 @@ class wgapi_wot_globalwar extends WgApiCore {
    * @param timestamp/date $input['until'] Конец периода
    * @param integer $input['offset'] Сдвиг относительно первого результата
    * @param integer $input['limit'] Кол-во результатов (от 20 до 100)
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function victorypointshistory ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'clan_id' => 'numeric'), array('language' => 'string', 'fields' => 'string', 'since' => 'timestamp/date', 'until' => 'timestamp/date', 'offset' => 'numeric', 'limit' => 'numeric'))) return NULL;
@@ -1643,12 +1674,35 @@ class wgapi_wot_auth extends WgApiCore {
    * По умолчанию: [{API_HOST}/blank/](https://{API_HOST}/blank/)
    * @param string $input['display'] Внешний вид формы для мобильных. Допустимые значения: page, popup
    * @param integer $input['nofollow'] При передаче параметра nofollow=1 URL будет возвращен в теле ответа вместо редиректа
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function login ($i = array()) {
     $this->erorr->add(array(array(401, "AUTH_CANCEL", "Пользователь отменил авторизацию для приложения"), array(403, "AUTH_EXPIRED", "Превышено время ожидания подтверждения авторизации пользователем"), array(410, "AUTH_ERROR", "Ошибка аутентификации")));
+    $mr = isset($i['return']) ? 'return' : 'location';
     if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'expires_at' => 'numeric', 'redirect_uri' => 'string', 'display' => 'string', 'nofollow' => 'numeric'))) return NULL;
-    $o = $this->send('auth/login', $i, array('https'));
+    if (!isset($i['redirect_uri']) || empty($i['redirect_uri'])) $i['redirect_uri'] = $_SERVER['REQUEST_SCHEME'] . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+    $n = get_called_class();
+    if (preg_match('/\?/i', $i['redirect_uri'])) $i['redirect_uri'] .= '&' . $n . '=' . __FUNCTION__;
+    else $i['redirect_uri'] .= '?' . $n . '=' . __FUNCTION__;
+    $o = $_REQUEST;
+    if (isset($o[$n]) && $o[$n] == 'login') {
+      unset($o[$n]);
+      //при отсутствие статуса выводим полученный масив
+      if (!isset($o['status'])) return $o;
+      //при верном статусе возвращаем данные
+      if ($o['status'] == 'ok') { unset($o['status']); return $o;}
+      //при ошибки переводим обработчик ошибок
+      $er = $o;
+      //присвоенние ошибки
+      $this->erorr->set($er, 'auth/login', $i);
+      switch ((string) $er['message']) {
+        //выполняем обновление клиента
+        case 'METHOD_DISABLED':
+        case 'METHOD_NOT_FOUND': $this->update(); break;
+      }
+      return NULL;
+    }
+    $o = $this->redirect('auth/login', $i, array('https'), $mr);
     return $o;
   }
 
@@ -1676,7 +1730,7 @@ class wgapi_wot_auth extends WgApiCore {
    * * "ko" - 한국어 
    * @param integer $input['expires_at'] Конечный период в UTC до которого должен работать **access_token**. Можно также указать дельту в секундах, сколько должен действовать **access_token**.
    * Конечный период и дельта не должны превышать двух недель от текущего времени.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function prolongate ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'access_token' => 'string'), array('language' => 'string', 'expires_at' => 'numeric'))) return NULL;
@@ -1706,7 +1760,7 @@ class wgapi_wot_auth extends WgApiCore {
    * * "th" - ไทย 
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function logout ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'access_token' => 'string'), array('language' => 'string'))) return NULL;
@@ -1742,7 +1796,7 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function tanks ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string'))) return NULL;
@@ -1772,7 +1826,7 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function tankinfo ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'tank_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string'))) return NULL;
@@ -1810,7 +1864,7 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * * "uk" - Великобритания 
    * * "china" - Китай 
    * * "japan" - Япония 
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function tankengines ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'module_id' => 'numeric, list', 'nation' => 'string'))) return NULL;
@@ -1848,7 +1902,7 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * * "uk" - Великобритания 
    * * "china" - Китай 
    * * "japan" - Япония 
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function tankturrets ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'module_id' => 'numeric, list', 'nation' => 'string'))) return NULL;
@@ -1886,7 +1940,7 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * * "uk" - Великобритания 
    * * "china" - Китай 
    * * "japan" - Япония 
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function tankradios ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'module_id' => 'numeric, list', 'nation' => 'string'))) return NULL;
@@ -1924,7 +1978,7 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * * "uk" - Великобритания 
    * * "china" - Китай 
    * * "japan" - Япония 
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function tankchassis ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'module_id' => 'numeric, list', 'nation' => 'string'))) return NULL;
@@ -1976,7 +2030,7 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * * "japan" - Япония 
    * @param integer $input['turret_id'] Идентификатор совместимой башни
    * @param integer $input['tank_id'] Идентификатор совместимого танка
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function tankguns ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'module_id' => 'numeric, list', 'nation' => 'string', 'turret_id' => 'numeric', 'tank_id' => 'numeric'))) return NULL;
@@ -2004,7 +2058,7 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function achievements ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string'))) return NULL;
@@ -2032,7 +2086,7 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * * "th" - ไทย 
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function info ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string'))) return NULL;
@@ -2074,7 +2128,7 @@ class wgapi_wot_tanks extends WgApiCore {
    * @param string $input['in_garage'] Фильтрация по присутствию танка в гараже. Если параметр не указан, возвращаются все танки.Параметр обрабатывается только при наличии валидного access_token для указанного account_id. Допустимые значения: 
    * * "1" - Возвращать только танки из гаража 
    * * "0" - Возвращать танки, которых уже нет в гараже 
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function stats ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'account_id' => 'numeric'), array('language' => 'string', 'fields' => 'string', 'access_token' => 'string', 'tank_id' => 'numeric, list', 'in_garage' => 'string'))) return NULL;
@@ -2113,7 +2167,7 @@ class wgapi_wot_tanks extends WgApiCore {
    * @param string $input['in_garage'] Фильтрация по присутствию танка в гараже. Если параметр не указан, возвращаются все танки.Параметр обрабатывается только при наличии валидного access_token для указанного account_id. Допустимые значения: 
    * * "1" - Возвращать только танки из гаража 
    * * "0" - Возвращать танки, которых уже нет в гараже 
-   * @return array
+   * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function achievements ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'account_id' => 'numeric'), array('language' => 'string', 'fields' => 'string', 'access_token' => 'string', 'tank_id' => 'numeric, list', 'in_garage' => 'string'))) return NULL;

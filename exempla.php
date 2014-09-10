@@ -4,7 +4,7 @@ include_once 'wgapi.php';
 $params = array(
   'region' => 'RU',
   'language' => 'ru',
-  'apiStandalone' => '1b7bc64858d79aed49d1bc479248fa1a',
-  'apiServer' => '2cc044ecd33f396b48287cd155c9958d'
+  'apiStandalone' => '6caa0c86ea0c3ffb938038b70597f483',
+  'apiServer' => 'e3ed3fdd67fe9e33bb377281b1a3a57a'
 );
-$wot = new Wgapi($params);
+$wowp = new Wgapi($params);
