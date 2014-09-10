@@ -492,13 +492,15 @@ class WgApiCore {
       $d .= "@param array \$input\n";
       unset($_m['name'], $_m['url'], $_m['description'], $_m['category_name'], $_m['deprecated']);
       //описание входящих полей
-      foreach ($_id as $__id)
+      foreach ($_id as $__id) {
+        $d .= str_repeat("-", 40) . "\n";
         foreach ($__id as $___id) {
           $___id['doc_type'] = str_replace(array(', ', 'numeric', 'list'), array('|', 'integer', 'array'), $___id['doc_type']);
           $d .= "@param {$___id['doc_type']} \$input['{$___id['name']}'] {$___id['help_text']}\n";
           if ($___id['deprecated'])
             $d .= "@todo deprecated \$input['{$___id['name']}'] {$___id['deprecated_text']}\n";
         }
+      }
 
       $d .= "@return array|NULL При возникновенние ошибки выдает NULL.\n";
       //$d .= json_encode($_m) . "\n";

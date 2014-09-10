@@ -492,13 +492,15 @@ class WgApiCore {
       $d .= "@param array \$input\n";
       unset($_m['name'], $_m['url'], $_m['description'], $_m['category_name'], $_m['deprecated']);
       //описание входящих полей
-      foreach ($_id as $__id)
+      foreach ($_id as $__id) {
+        $d .= str_repeat("-", 40) . "\n";
         foreach ($__id as $___id) {
           $___id['doc_type'] = str_replace(array(', ', 'numeric', 'list'), array('|', 'integer', 'array'), $___id['doc_type']);
           $d .= "@param {$___id['doc_type']} \$input['{$___id['name']}'] {$___id['help_text']}\n";
           if ($___id['deprecated'])
             $d .= "@todo deprecated \$input['{$___id['name']}'] {$___id['deprecated_text']}\n";
         }
+      }
 
       $d .= "@return array|NULL При возникновенние ошибки выдает NULL.\n";
       //$d .= json_encode($_m) . "\n";
@@ -705,7 +707,9 @@ class wgapi_wot_clan extends WgApiCore {
    * @category Кланы
    * @link clan/list
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -747,8 +751,10 @@ class wgapi_wot_clan extends WgApiCore {
    * @category Кланы
    * @link clan/info
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer|array $input['clan_id'] Идентификатор клана
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -780,8 +786,10 @@ class wgapi_wot_clan extends WgApiCore {
    * @link clan/battles
    * @todo deprecated
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer|array $input['clan_id'] Идентификатор клана
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -813,7 +821,9 @@ class wgapi_wot_clan extends WgApiCore {
    * @category Кланы
    * @link clan/top
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -846,8 +856,10 @@ class wgapi_wot_clan extends WgApiCore {
    * @category Кланы
    * @link clan/provinces
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer $input['clan_id'] Идентификатор клана
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -878,8 +890,10 @@ class wgapi_wot_clan extends WgApiCore {
    * @link clan/victorypoints
    * @todo deprecated
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer|array $input['clan_id'] Идентификатор клана
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -910,8 +924,10 @@ class wgapi_wot_clan extends WgApiCore {
    * @link clan/victorypointshistory
    * @todo deprecated
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer $input['clan_id'] Идентификатор клана
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -944,8 +960,10 @@ class wgapi_wot_clan extends WgApiCore {
    * @category Кланы
    * @link clan/membersinfo
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer|array $input['member_id'] Идентификатор члена клана
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -982,7 +1000,9 @@ class wgapi_wot_ratings extends WgApiCore {
    * @category Рейтинги игроков
    * @link ratings/types
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1011,6 +1031,7 @@ class wgapi_wot_ratings extends WgApiCore {
    * @category Рейтинги игроков
    * @link ratings/accounts
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer|array $input['account_id'] Идентификаторы аккаунтов игроков
    * @param string $input['type'] Тип рейтинга. Допустимые значения: 
@@ -1018,6 +1039,7 @@ class wgapi_wot_ratings extends WgApiCore {
    * * "all" - all 
    * * "28" - 28 
    * * "7" - 7 
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1048,6 +1070,7 @@ class wgapi_wot_ratings extends WgApiCore {
    * @category Рейтинги игроков
    * @link ratings/neighbors
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer $input['account_id'] Идентификатор аккаунта игрока
    * @param string $input['type'] Тип рейтинга. Допустимые значения: 
@@ -1056,6 +1079,7 @@ class wgapi_wot_ratings extends WgApiCore {
    * * "28" - 28 
    * * "7" - 7 
    * @param string $input['rank_field'] Категория рейтинга
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1087,6 +1111,7 @@ class wgapi_wot_ratings extends WgApiCore {
    * @category Рейтинги игроков
    * @link ratings/top
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['type'] Тип рейтинга. Допустимые значения: 
    * * "1" - 1 
@@ -1094,6 +1119,7 @@ class wgapi_wot_ratings extends WgApiCore {
    * * "28" - 28 
    * * "7" - 7 
    * @param string $input['rank_field'] Категория рейтинга
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1125,12 +1151,14 @@ class wgapi_wot_ratings extends WgApiCore {
    * @category Рейтинги игроков
    * @link ratings/dates
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['type'] Тип рейтинга. Допустимые значения: 
    * * "1" - 1 
    * * "all" - all 
    * * "28" - 28 
    * * "7" - 7 
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1168,11 +1196,13 @@ class wgapi_wot_account extends WgApiCore {
    * @category Аккаунт
    * @link account/list
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['search'] 
    *     Строка поиска по имени игрока. Вид поиска и минимальная длина строки поиска зависят от параметра type.
    *     Максимальная длина строки поиска 24 символа.
    *   
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1206,8 +1236,10 @@ class wgapi_wot_account extends WgApiCore {
    * @category Аккаунт
    * @link account/info
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer|array $input['account_id'] Идентификатор аккаунта игрока
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1238,8 +1270,10 @@ class wgapi_wot_account extends WgApiCore {
    * @category Аккаунт
    * @link account/tanks
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer|array $input['account_id'] Идентификатор аккаунта игрока
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1275,8 +1309,10 @@ class wgapi_wot_account extends WgApiCore {
    * @category Аккаунт
    * @link account/achievements
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer|array $input['account_id'] Идентификатор аккаунта игрока
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1312,8 +1348,10 @@ class wgapi_wot_globalwar extends WgApiCore {
    * @category Мировая война
    * @link globalwar/clans
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['map_id'] Идентификатор карты
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1344,9 +1382,11 @@ class wgapi_wot_globalwar extends WgApiCore {
    * @category Мировая война
    * @link globalwar/famepoints
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['map_id'] Идентификатор карты
    * @param integer|array $input['account_id'] Идентификатор аккаунта игрока
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1375,7 +1415,9 @@ class wgapi_wot_globalwar extends WgApiCore {
    * @category Мировая война
    * @link globalwar/maps
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1404,8 +1446,10 @@ class wgapi_wot_globalwar extends WgApiCore {
    * @category Мировая война
    * @link globalwar/provinces
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['map_id'] Идентификатор карты
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1435,12 +1479,14 @@ class wgapi_wot_globalwar extends WgApiCore {
    * @category Мировая война
    * @link globalwar/top
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['map_id'] Идентификатор карты
    * @param string $input['order_by'] Вид сортировки.. Допустимые значения: 
    * * "wins_count" - Количество побед 
    * * "combats_count" - Количество боев 
    * * "provinces_count" - Количество провинций 
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1469,9 +1515,11 @@ class wgapi_wot_globalwar extends WgApiCore {
    * @category Мировая война
    * @link globalwar/tournaments
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['map_id'] Идентификатор карты
    * @param string $input['province_id'] Идентификатор провинции
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1500,9 +1548,11 @@ class wgapi_wot_globalwar extends WgApiCore {
    * @category Мировая война
    * @link globalwar/famepointshistory
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['map_id'] Идентификатор карты
    * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1535,8 +1585,10 @@ class wgapi_wot_globalwar extends WgApiCore {
    * @category Мировая война
    * @link globalwar/alleyoffame
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['map_id'] Идентификатор карты
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1567,9 +1619,11 @@ class wgapi_wot_globalwar extends WgApiCore {
    * @category Мировая война
    * @link globalwar/battles
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['map_id'] Идентификатор карты
    * @param integer|array $input['clan_id'] Идентификатор клана
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1599,9 +1653,11 @@ class wgapi_wot_globalwar extends WgApiCore {
    * @category Мировая война
    * @link globalwar/victorypointshistory
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['map_id'] Идентификатор карты
    * @param integer $input['clan_id'] Идентификатор клана
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1653,7 +1709,9 @@ class wgapi_wot_auth extends WgApiCore {
    * @category Аутентификация
    * @link auth/login
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1713,8 +1771,10 @@ class wgapi_wot_auth extends WgApiCore {
    * @category Аутентификация
    * @link auth/prolongate
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1745,8 +1805,10 @@ class wgapi_wot_auth extends WgApiCore {
    * @category Аутентификация
    * @link auth/logout
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1781,7 +1843,9 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/tanks
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1810,8 +1874,10 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/tankinfo
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer|array $input['tank_id'] Идентификатор танка
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1840,7 +1906,9 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/tankengines
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1878,7 +1946,9 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/tankturrets
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1916,7 +1986,9 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/tankradios
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1954,7 +2026,9 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/tankchassis
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -2004,7 +2078,9 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/tankguns
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -2043,7 +2119,9 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/achievements
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -2072,7 +2150,9 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/info
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -2107,8 +2187,10 @@ class wgapi_wot_tanks extends WgApiCore {
    * @category Танки игрока
    * @link tanks/stats
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer $input['account_id'] Идентификатор аккаунта игрока
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -2146,8 +2228,10 @@ class wgapi_wot_tanks extends WgApiCore {
    * @category Танки игрока
    * @link tanks/achievements
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer $input['account_id'] Идентификатор аккаунта игрока
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)

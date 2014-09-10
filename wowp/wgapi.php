@@ -492,13 +492,15 @@ class WgApiCore {
       $d .= "@param array \$input\n";
       unset($_m['name'], $_m['url'], $_m['description'], $_m['category_name'], $_m['deprecated']);
       //описание входящих полей
-      foreach ($_id as $__id)
+      foreach ($_id as $__id) {
+        $d .= str_repeat("-", 40) . "\n";
         foreach ($__id as $___id) {
           $___id['doc_type'] = str_replace(array(', ', 'numeric', 'list'), array('|', 'integer', 'array'), $___id['doc_type']);
           $d .= "@param {$___id['doc_type']} \$input['{$___id['name']}'] {$___id['help_text']}\n";
           if ($___id['deprecated'])
             $d .= "@todo deprecated \$input['{$___id['name']}'] {$___id['deprecated_text']}\n";
         }
+      }
 
       $d .= "@return array|NULL При возникновенние ошибки выдает NULL.\n";
       //$d .= json_encode($_m) . "\n";
@@ -704,7 +706,9 @@ class wgapi_wowp_ratings extends WgApiCore {
    * @category Рейтинги игрока
    * @link ratings/types
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -733,6 +737,7 @@ class wgapi_wowp_ratings extends WgApiCore {
    * @category Рейтинги игрока
    * @link ratings/accounts
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['type'] Период формирования рейтинга. Допустимые значения: 
    * * "1" - 1 
@@ -740,6 +745,7 @@ class wgapi_wowp_ratings extends WgApiCore {
    * * "28" - 28 
    * * "7" - 7 
    * @param integer|array $input['account_id'] Идентификаторы аккаунтов игроков
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -770,6 +776,7 @@ class wgapi_wowp_ratings extends WgApiCore {
    * @category Рейтинги игрока
    * @link ratings/neighbors
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['type'] Период формирования рейтинга. Допустимые значения: 
    * * "1" - 1 
@@ -778,6 +785,7 @@ class wgapi_wowp_ratings extends WgApiCore {
    * * "7" - 7 
    * @param integer $input['account_id'] Идентификатор аккаунта игрока
    * @param string $input['rank_field'] Категория рейтинга
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -809,6 +817,7 @@ class wgapi_wowp_ratings extends WgApiCore {
    * @category Рейтинги игрока
    * @link ratings/top
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['type'] Период формирования рейтинга. Допустимые значения: 
    * * "1" - 1 
@@ -816,6 +825,7 @@ class wgapi_wowp_ratings extends WgApiCore {
    * * "28" - 28 
    * * "7" - 7 
    * @param string $input['rank_field'] Категория рейтинга
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -847,12 +857,14 @@ class wgapi_wowp_ratings extends WgApiCore {
    * @category Рейтинги игрока
    * @link ratings/dates
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['type'] Период формирования рейтинга. Допустимые значения: 
    * * "1" - 1 
    * * "all" - all 
    * * "28" - 28 
    * * "7" - 7 
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -889,10 +901,12 @@ class wgapi_wowp_account extends WgApiCore {
    * @category Аккаунт
    * @link account/list
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['search'] 
    *     Первые символы имени игрока, по которым осуществляется поиск. Минимальная длина: 3 символа без учёта регистра.
    *   
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -923,8 +937,10 @@ class wgapi_wowp_account extends WgApiCore {
    * @category Аккаунт
    * @link account/info
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer|array $input['account_id'] Идентификатор аккаунта игрока
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -954,8 +970,10 @@ class wgapi_wowp_account extends WgApiCore {
    * @category Аккаунт
    * @link account/planes
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer|array $input['account_id'] Идентификатор аккаунта игрока
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -992,7 +1010,9 @@ class wgapi_wowp_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/planes
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1033,8 +1053,10 @@ class wgapi_wowp_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/planeinfo
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer|array $input['plane_id'] Идентификатор самолёта
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1063,8 +1085,10 @@ class wgapi_wowp_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/planemodules
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer|array $input['plane_id'] Идентификатор самолёта
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1100,8 +1124,10 @@ class wgapi_wowp_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/planeupgrades
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer|array $input['plane_id'] Идентификатор самолёта
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1130,8 +1156,10 @@ class wgapi_wowp_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/planespecification
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer $input['plane_id'] Идентификатор самолёта
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1162,7 +1190,9 @@ class wgapi_wowp_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/achievements
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)
@@ -1191,7 +1221,9 @@ class wgapi_wowp_encyclopedia extends WgApiCore {
    * @category Энциклопедия
    * @link encyclopedia/info
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
    * * "ru" - Русский (используется по умолчанию)

@@ -492,13 +492,15 @@ class WgApiCore {
       $d .= "@param array \$input\n";
       unset($_m['name'], $_m['url'], $_m['description'], $_m['category_name'], $_m['deprecated']);
       //описание входящих полей
-      foreach ($_id as $__id)
+      foreach ($_id as $__id) {
+        $d .= str_repeat("-", 40) . "\n";
         foreach ($__id as $___id) {
           $___id['doc_type'] = str_replace(array(', ', 'numeric', 'list'), array('|', 'integer', 'array'), $___id['doc_type']);
           $d .= "@param {$___id['doc_type']} \$input['{$___id['name']}'] {$___id['help_text']}\n";
           if ($___id['deprecated'])
             $d .= "@todo deprecated \$input['{$___id['name']}'] {$___id['deprecated_text']}\n";
         }
+      }
 
       $d .= "@return array|NULL При возникновенние ошибки выдает NULL.\n";
       //$d .= json_encode($_m) . "\n";
@@ -711,7 +713,9 @@ class wgapi_wgn_wargag extends WgApiCore {
    * @category Wargag
    * @link wargag/content
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param string $input['type'] Тип контента. Допустимые значения: 
    * * "quote" - тип контента Цитаты 
@@ -742,8 +746,10 @@ class wgapi_wgn_wargag extends WgApiCore {
    * @category Wargag
    * @link wargag/search
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['q'] Текст для поиска по контенту, минимальная длина 3 символа, поиск без учета регистра
+   * ----------------------------------------
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param string $input['type'] Тип контента. Допустимые значения: 
    * * "quote" - тип контента Цитаты 
@@ -767,8 +773,10 @@ class wgapi_wgn_wargag extends WgApiCore {
    * @category Wargag
    * @link wargag/comments
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param integer $input['content_id'] Идентификатор контента
+   * ----------------------------------------
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param integer $input['page_no'] Номер страницы выдачи
    * @return array|NULL При возникновенние ошибки выдает NULL.
@@ -786,10 +794,12 @@ class wgapi_wgn_wargag extends WgApiCore {
    * @category Wargag
    * @link wargag/categories
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['type'] Тип контента. Допустимые значения: 
    * * "video" - категория Видео 
    * * "picture" - категория Картинки 
+   * ----------------------------------------
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param integer $input['category_id'] Идентификатор категории
    * @return array|NULL При возникновенние ошибки выдает NULL.
@@ -807,7 +817,9 @@ class wgapi_wgn_wargag extends WgApiCore {
    * @category Wargag
    * @link wargag/tags
    * @param array $input
+   * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param integer $input['tag_id'] Идентификатор тега
    * @return array|NULL При возникновенние ошибки выдает NULL.

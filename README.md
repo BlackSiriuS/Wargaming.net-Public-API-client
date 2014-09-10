@@ -18,8 +18,8 @@ Wargaming.net Public API Client
 $params = array(
   'region' => 'RU', //регион
   'language' => 'ru', //язык ответа
-  'apiStandalone' => '171745d21f7f98fd8878771da1000a31', //Ключь автономного приложения
-  'apiServer' => 'd0a293dc77667c9328783d489c8cef73' //Ключь серверного приложения
+  'apiStandalone' => '6caa0c86ea0c3ffb938038b70597f483', //Ключь автономного приложения
+  'apiServer' => 'e3ed3fdd67fe9e33bb377281b1a3a57a', //Ключь серверного приложения
 );
 new Wgapi($params);
 ````
@@ -54,8 +54,8 @@ Wargaming.NET
 $wot = new Wgapi(array(
   'region' => 'RU', //регион
   'language' => 'ru', //язык ответа
-  'apiStandalone' => '171745d21f7f98fd8878771da1000a31', //Ключь автономного приложения
-  'apiServer' => 'd0a293dc77667c9328783d489c8cef73' //Ключь серверного приложения
+  'apiStandalone' => '6caa0c86ea0c3ffb938038b70597f483', //Ключь автономного приложения
+  'apiServer' => 'e3ed3fdd67fe9e33bb377281b1a3a57a', //Ключь серверного приложения
 ));
 
 $output = $wot->account->info(array(
