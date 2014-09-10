@@ -73,7 +73,7 @@ class WgApiCore {
    * Список доступных методов и дочерних класов для подгрузки
    * @var array 
    */
-  public $load_class = array('account', 'auth', 'clan', 'encyclopedia', 'globalwar', 'ratings', 'tanks');
+  public $load_class = array();
 
   /**
    * Присвоение первичных параметров для функционально класса
