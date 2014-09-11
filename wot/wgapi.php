@@ -73,20 +73,22 @@ class WgApiCore {
    * Список доступных методов и дочерних класов для подгрузки
    * @var array 
    */
-  public $load_class = array('account', 'auth', 'clan', 'encyclopedia', 'globalwar', 'ratings', 'tanks');
+  public $load_class = array('account', 'auth', 'clan', 'clanratings', 'encyclopedia', 'globalwar', 'ratings', 'tanks');
 
   /**
-   * Присвоение первичных параметров для функционально класса
+   * Присвоение первичных параметров для функционального класса
    * @param array $p Входящие параметры для объявления класса
    */
   function __construct($p = array()) {
     $p = (array) $p;
     foreach ($p as $_p_ => $_p)
-      if (!empty($_p) && $_p_ != 'parent' && !in_array($_p_, $this->load_class))
+      if (!empty($_p) && !in_array($_p_, $this->load_class))
         $this->$_p_ = $_p;
     $this->language((string) @$p['language']);
     $this->region((string) @$p['region']);
     $this->setuser(@$p['user']);
+    //загрузка класса кэшированния
+    $this->cache = new WgApiCache(@$p['cache']);
     $this->load();
   }
 
@@ -95,8 +97,6 @@ class WgApiCore {
    * @return boolean
    */
   function load() {
-    //загрузка класса ошибок
-    $this->erorr = new WgApiError();
     return true;
   }
 
@@ -208,7 +208,7 @@ class WgApiCore {
     //флаг авторизировано пользователя
     $_wt = (isset($p['access_token']) && !empty($p['access_token']));
     //выбор протокола
-    $pr = $this->protocol($pr, $_wt);
+    $_pr = $this->protocol($pr, $_wt);
     //определение ключа приложенния
     if (isset($p['application_id']) && empty($p['application_id']))
       $p['application_id'] = $_wt ? $this->apiStandalone : $this->apiServer;
@@ -216,6 +216,14 @@ class WgApiCore {
     if (isset($p['language']) && empty($p['language']))
       $p['language'] = $this->language;
     unset($_wt);
+    $_u = $this->setURL($_pr, $m);
+    $h = '-';
+    if (isset($this->cache)) {
+      $h = md5(md5($_u) . md5(json_encode($p)));
+      $r = $this->cache->get($h);
+      if ($r)
+        return $r;
+    }
     //формированние запроса
     $c = curl_init();
     //проверка будут ли использоватся параметры метода
@@ -225,7 +233,7 @@ class WgApiCore {
     }
     curl_setopt($c, CURLOPT_RETURNTRANSFER, true);
     //дополнительный параметр протокола
-    if ($pr == 'https')
+    if ($_pr == 'https')
       curl_setopt($c, CURLOPT_SSL_VERIFYPEER, false);
     //Эмулированние браузерра
     curl_setopt($c, CURLOPT_HTTPHEADER, array(
@@ -235,21 +243,30 @@ class WgApiCore {
       "Connection: Keep-Alive",
     ));
     curl_setopt($c, CURLOPT_TIMEOUT, 120);
-    curl_setopt($c, CURLOPT_URL, $this->setURL($pr, $m));
+    curl_setopt($c, CURLOPT_URL, $_u);
     $d = curl_exec($c);
     curl_close($c);
     //перевод данных в массив
     $r = @json_decode((string) @$d, true);
 //при ошибки получения массива возвращаем полученные данные
-    if (!$r)
+    if (!$r) {
+      if (isset($this->cache))
+        $this->cache->set($h, $d);
       return (string) @$d;
+    }
     unset($d);
     //при отсутствие статуса выводим полученный масив
-    if (!isset($r['status']))
+    if (!isset($r['status'])) {
+      if (isset($this->cache))
+        $this->cache->set($h, $r);
       return $r;
+    }
     //при верном статусе возвращаем данные
-    if ($r['status'] == 'ok')
+    if ($r['status'] == 'ok') {
+      if (isset($this->cache))
+        $this->cache->set($h, $r['data']);
       return $r['data'];
+    }
 //при ошибки переводим обработчик ошибок
     if (isset($r[$r['status']])) {
       $er = $r[$r['status']];
@@ -259,7 +276,7 @@ class WgApiCore {
         //выполняем запрос без токена
         case 'INVALID_ACCESS_TOKEN':
           unset($p['access_token']);
-          return $this->send($m, $p);
+          return $this->send($m, $p, $pr);
           break;
         //выполняем обновление клиента
         case 'METHOD_DISABLED':
@@ -410,7 +427,7 @@ class WgApiCore {
         if (isset($this->$c))
         //присвоенние дочернему классу переменных
           foreach ($_v as $__v_ => $__v)
-            if (!empty($__v) && $__v_ != 'parent' && !in_array($__v_, $this->load_class))
+            if (!empty($__v) && !in_array($__v_, $this->load_class))
               $this->$c->$__v_ = $__v;
     }
   }
@@ -545,12 +562,6 @@ class WgApiCore {
  * @version 1.0
  */
 class Wgapi extends WgapiCore {
-
-  /**
-   * Параметр определяющий что данный класс является главным/первичным
-   * @var boolean 
-   */
-  public $parent = true;
 
   /**
    * Выполняет загрузку вторичных классов, при их отсутствии выполняет обновляет данный файл.
@@ -689,6 +700,237 @@ class WgApiError {
   }
 
 }
+
+/**
+ * WgApiCache
+ * 
+ * Класс, кэширования запросов API
+ * 
+ * @author Serg Auer <auerserg@gmail.com>
+ * @version 1.0
+ */
+class WgApiCache {
+
+  /**
+   * Период кэширования
+   * @var integer 
+   */
+  public $period = 21600;
+
+  /**
+   * Адрес сервера кэширования Memcache
+   * @var string 
+   */
+  public $mem_server = '127.0.0.1';
+
+  /**
+   * Порт сервера кэширования Memcache
+   * @var integer 
+   */
+  public $mem_port = 11211;
+
+  /**
+   * Доступные методы кэширование на сервере
+   * @var array 
+   */
+  public $type_allowed = array();
+
+  /**
+   * Присвоение первичных параметров для функционального класса
+   * @param array $p
+   */
+  function __construct($p = array()) {
+    //определение дериктории поумолчанию
+    $this->file_dir = dirname(__FILE__) . DIRECTORY_SEPARATOR . 'WgCache' . DIRECTORY_SEPARATOR;
+    $p = (array) $p;
+    foreach ($p as $_p_ => $_p)
+      if (!empty($_p))
+        $this->$_p_ = $_p;
+    $this->check();
+    $this->type((string) @$p['type']);
+  }
+
+  /**
+   * Определение метода кэширования, который будет использоватся
+   * @param string $t Метод определенный пользователем
+   * @return string
+   */
+  function type($t = 'NULL') {
+    //проверка валидности языка
+    if (in_array($t, $this->type_allowed))
+      $this->type = $t;
+    return $this->type;
+  }
+
+  /**
+   * Проверяем доступные методы кэширования и определяем доступные возможности
+   */
+  function check() {
+    $ta = array();
+    //определяем null значенния - нечего не кэшировать
+    $this->type = 'null';
+    $ta[] = 'null';
+    //определяем min значенния - кэширование в переменную
+    $this->type = 'min';
+    $ta[] = 'min';
+    $this->min_cache = array();
+    //определяем file значенния - кэширование в файл
+    if (file_exists($this->file_dir) && is_dir($this->file_dir)) {
+      $this->type = 'file';
+      $ta[] = 'file';
+    }
+    //определяем apc значенния - кэширование в APC
+    if (function_exists('apc_store') && function_exists('apc_fetch')) {
+      $this->type = 'apc';
+      $ta[] = 'apc';
+    }
+    //определяем mem значенния - кэширование в Memcache
+    if (class_exists('Memcache')) {
+      $this->mem_c = new Memcache;
+      if ($this->mem_c->connect($this->mem_server, $this->mem_port)) {
+        $this->type = 'mem';
+        $ta[] = 'mem';
+      }
+    }
+    //определяем доступные методы
+    $this->type_allowed = $ta;
+  }
+
+  /**
+   * Первичный метод получения кэша
+   * @param string $h Ключ кэша
+   * @return mixed
+   */
+  function get($h) {
+    $fn = 'get_' . $this->type;
+    return $this->$fn($h);
+  }
+
+  /**
+   * Метод получения кэша Memcache
+   * @param string $h Ключ кэша
+   * @return mixed
+   */
+  function get_mem($h) {
+    return $this->mem_c->get($h);
+  }
+
+  /**
+   * Метод получения пустого кэша
+   * @param string $h Ключ кэша
+   * @return mixed
+   */
+  function get_null($h) {
+    return FALSE;
+  }
+
+  /**
+   * Метод получения кэша APC
+   * @param string $h Ключ кэша
+   * @return mixed
+   */
+  function get_apc($h) {
+    return apc_fetch($h);
+  }
+
+  /**
+   * Метод получения кэша файлово
+   * @param string $h Ключ кэша
+   * @return mixed
+   */
+  function get_file($h) {
+    if (file_exists($this->file_dir . $h)) {
+      if (time() - filemtime($this->file_dir . $h) < $this->period) {
+        $v = file_get_contents($this->file_dir . $h);
+        $v = json_decode($v, true);
+        if ($v)
+          return $v;
+      } else
+        @unlink($this->file_dir . $h);
+    }
+    return FALSE;
+  }
+
+  /**
+   * Метод получения кэша с переменной
+   * @param string $h Ключ кэша
+   * @return mixed
+   */
+  function get_min($h) {
+    if (isset($this->min_cache[$h]))
+      return $this->min_cache[$h];
+    return FALSE;
+  }
+
+  /**
+   * Первичный метод сохраненния кэша
+   * @param string $h Ключ кэша
+   * @param mixed $v Значение кэша
+   * @return mixed
+   */
+  function set($h, $v = '') {
+    $fn = 'set_' . $this->type;
+    return $this->$fn($h, $v);
+  }
+
+  /**
+   * Метод сохраненние кэша Memcache
+   * @param string $h Ключ кэша
+   * @param mixed $v Значение кэша
+   * @return mixed
+   */
+  function set_mem($h, $v = '') {
+    return $this->mem_c->set($h, $v, MEMCACHE_COMPRESSED, $this->period);
+  }
+
+  /**
+   * Метод сохраненние пустого кэша
+   * @param string $h Ключ кэша
+   * @param mixed $v Значение кэша
+   * @return mixed
+   */
+  function set_null($h, $v = '') {
+    return FALSE;
+  }
+
+  /**
+   * Метод сохраненние кэша APC
+   * @param string $h Ключ кэша
+   * @param mixed $v Значение кэша
+   * @return mixed
+   */
+  function set_apc($h, $v = '') {
+    return apc_store($h, $v, $this->period);
+  }
+
+  /**
+   * Метод сохраненние кэша Файл
+   * @param string $h Ключ кэша
+   * @param mixed $v Значение кэша
+   * @return mixed
+   */
+  function set_file($h, $v = '') {
+    if ($f = @fopen($this->file_dir . $h, 'w')) {
+      fwrite($f, json_encode($v));
+      fclose($f);
+      return TRUE;
+    } else
+      return FALSE;
+  }
+
+  /**
+   * Метод сохраненние кэша в переменную
+   * @param string $h Ключ кэша
+   * @param mixed $v Значение кэша
+   * @return mixed
+   */
+  function set_min($h, $v = '') {
+    $this->min_cache[$h] = $v;
+    return TRUE;
+  }
+
+}
+
 // After this line rewrite code
 
 
@@ -701,9 +943,8 @@ class WgApiError {
 class wgapi_wot_clan extends WgApiCore {
 
   /**
-   * Список кланов
-   * Возвращает часть списка кланов, отсортированного по имени (default) или по дате создания, тегу, численности и отфильтрованного по начальной части имени или аббревиатуры.
-   * Не возвращает весь список кланов.
+   * Кланы
+   * Метод возвращает часть списка кланов, отфильтрованную по первым символам имени или тега клана. Список отсортирован по имени (по умолчанию) или по дате создания, тегу, численности клана.
    * @category Кланы
    * @link clan/list
    * @param array $input
@@ -724,9 +965,9 @@ class wgapi_wot_clan extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @param string $input['search'] Начальная часть имени или аббревиатуры клана по которому осуществляется поиск.
+   * @param string $input['search'] Первые символы названия или тега клана, по которым осуществляется поиск.
    * @param integer $input['limit'] Количество возвращаемых записей. Максимальное количество: 100. Если значение неверно или превышает 100, то по умолчанию возвращается 100 записей.
-   * @param string $input['order_by'] Вид сортировки.. Допустимые значения: 
+   * @param string $input['order_by'] Вид сортировки. Допустимые значения: 
    * * "name" - по имени клана 
    * * "-name" - по имени клана в обратном порядке 
    * * "members_count" - по численности клана 
@@ -735,11 +976,11 @@ class wgapi_wot_clan extends WgApiCore {
    * * "-created_at" - по дате создания клана в обратном порядке 
    * * "abbreviation" - по тегу клана 
    * * "-abbreviation" - по тегу клана в обратном порядке 
-   * @param integer $input['page_no'] Номер страницы выдачи
+   * @param integer $input['page_no'] Номер страницы результатов
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function lists ($i = array()) {
-    $this->erorr->add(array(array(402, "SEARCH_NOT_SPECIFIED", "Не указан обязательный параметр **search**"), array(407, "NOT_ENOUGH_SEARCH_LENGTH", "Недостаточная длина параметра **search**. Минимум 3 символа")));
+    $this->erorr->add(array(array(402, "SEARCH_NOT_SPECIFIED", "Не задано значение параметра **search**"), array(407, "NOT_ENOUGH_SEARCH_LENGTH", "Недостаточная длина параметра **search**. Минимум: 3 символа.")));
     if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'search' => 'string', 'limit' => 'numeric', 'order_by' => 'string', 'page_no' => 'numeric'))) return NULL;
     $o = $this->send('clan/list', $i, array('http', 'https'));
     return $o;
@@ -747,7 +988,7 @@ class wgapi_wot_clan extends WgApiCore {
 
   /**
    * Данные клана
-   * Возвращает информацию о клане.
+   * Метод возвращает информацию о клане.
    * @category Кланы
    * @link clan/info
    * @param array $input
@@ -773,15 +1014,15 @@ class wgapi_wot_clan extends WgApiCore {
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function info ($i = array()) {
-    $this->erorr->add(array(array(407, "CLAN_ID_LIST_LIMIT_EXCEEDED", "Лимит переданных идентификаторов **clan_id** превышен ( >100 )")));
+    $this->erorr->add(array(array(407, "CLAN_ID_LIST_LIMIT_EXCEEDED", "Превышено максимальное количество переданных идентификаторов **clan_id**. Максимум: 100.")));
     if (!$this->validate($i, array('application_id' => 'string', 'clan_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string', 'access_token' => 'string'))) return NULL;
     $o = $this->send('clan/info', $i, array('http', 'https'));
     return $o;
   }
 
   /**
-   * Список боёв клана
-   * Возвращает список боев клана.
+   * Бои клана
+   * Метод возвращает список боёв клана.
    * @category Кланы
    * @link clan/battles
    * @todo deprecated
@@ -805,7 +1046,7 @@ class wgapi_wot_clan extends WgApiCore {
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
-   * @param integer $input['map_id'] Идентификатор карты
+   * @param integer $input['map_id'] Идентификатор Глобальной карты
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function battles ($i = array()) {
@@ -815,9 +1056,8 @@ class wgapi_wot_clan extends WgApiCore {
   }
 
   /**
-   * Топ кланов по очкам победы
-   * Возвращает часть списка кланов, отсортированного по рейтингу
-   * Не возвращает весь список кланов, только первые 100.
+   * Лучшие кланы по очкам победы
+   * Метод возвращает список первых 100 кланов, отсортированных по рейтингу.
    * @category Кланы
    * @link clan/top
    * @param array $input
@@ -838,7 +1078,7 @@ class wgapi_wot_clan extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @param string $input['map_id'] Идентификатор карты
+   * @param string $input['map_id'] Идентификатор Глобальной карты
    * @param string $input['time'] Временной промежуток. Допустимые значения: 
    * * "current_season" - Текущее событие (используется по умолчанию)
    * * "current_step" - Текущий этап 
@@ -852,7 +1092,7 @@ class wgapi_wot_clan extends WgApiCore {
 
   /**
    * Провинции клана
-   * Возвращает списка провинций клана
+   * Метод возвращает список провинций клана.
    * @category Кланы
    * @link clan/provinces
    * @param array $input
@@ -885,7 +1125,7 @@ class wgapi_wot_clan extends WgApiCore {
 
   /**
    * Очки победы клана
-   * Количество очков победы у клана
+   * Метод возвращает количество очков победы клана.
    * @category Кланы
    * @link clan/victorypoints
    * @todo deprecated
@@ -911,7 +1151,7 @@ class wgapi_wot_clan extends WgApiCore {
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function victorypoints ($i = array()) {
-    $this->erorr->add(array(array(407, "CLAN_ID_LIST_LIMIT_EXCEEDED", "Лимит переданных идентификаторов **clan_id** превышен ( >100 )")));
+    $this->erorr->add(array(array(407, "CLAN_ID_LIST_LIMIT_EXCEEDED", "Превышено максимальное количество переданных идентификаторов **clan_id**. Максимум: 100.")));
     if (!$this->validate($i, array('application_id' => 'string', 'clan_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string'))) return NULL;
     $o = $this->send('clan/victorypoints', $i, array('http', 'https'));
     return $o;
@@ -919,7 +1159,7 @@ class wgapi_wot_clan extends WgApiCore {
 
   /**
    * История начисления очков победы клана
-   * История начислений очков победы для клана
+   * Метод возвращает историю начислений очков победы клана.
    * @category Кланы
    * @link clan/victorypointshistory
    * @todo deprecated
@@ -942,11 +1182,11 @@ class wgapi_wot_clan extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @param integer $input['map_id'] Идентификатор карты
-   * @param timestamp/date $input['since'] Начало периода
-   * @param timestamp/date $input['until'] Конец периода
+   * @param integer $input['map_id'] Идентификатор Глобальной карты
+   * @param timestamp/date $input['since'] Начало этапа
+   * @param timestamp/date $input['until'] Конец этапа
    * @param integer $input['offset'] Сдвиг относительно первого результата
-   * @param integer $input['limit'] Кол-во результатов (от 20 до 100)
+   * @param integer $input['limit'] Количество результатов (от 20 до 100)
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function victorypointshistory ($i = array()) {
@@ -956,13 +1196,13 @@ class wgapi_wot_clan extends WgApiCore {
   }
 
   /**
-   * Информация о члене клана
+   * Участник клана
    * @category Кланы
    * @link clan/membersinfo
    * @param array $input
    * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
-   * @param integer|array $input['member_id'] Идентификатор члена клана
+   * @param integer|array $input['member_id'] Идентификатор участника клана
    * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
@@ -981,7 +1221,7 @@ class wgapi_wot_clan extends WgApiCore {
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function membersinfo ($i = array()) {
-    $this->erorr->add(array(array(407, "MEMBER_ID_LIST_LIMIT_EXCEEDED", "Лимит переданных идентификаторов **member_id** превышен ( >100 )")));
+    $this->erorr->add(array(array(407, "MEMBER_ID_LIST_LIMIT_EXCEEDED", "Превышено максимальное количество переданных идентификаторов **member_id**. Максимум: 100.")));
     if (!$this->validate($i, array('application_id' => 'string', 'member_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string'))) return NULL;
     $o = $this->send('clan/membersinfo', $i, array('http', 'https'));
     return $o;
@@ -990,14 +1230,14 @@ class wgapi_wot_clan extends WgApiCore {
 }
 
 /**
- * Рейтинги игроков 
+ * Рейтинги игрока 
  */
 class wgapi_wot_ratings extends WgApiCore {
 
   /**
    * Типы рейтингов
-   * Возвращает словарь типов рейтингов и информацию о них.
-   * @category Рейтинги игроков
+   * Метод возвращает словарь, содержащий периоды формирования рейтингов и информацию о рейтингах.
+   * @category Рейтинги игрока
    * @link ratings/types
    * @param array $input
    * ----------------------------------------
@@ -1026,19 +1266,19 @@ class wgapi_wot_ratings extends WgApiCore {
   }
 
   /**
-   * Рейтинги игроков
-   * Возвращает рейтинги игроков по заданным идентификаторам.
-   * @category Рейтинги игроков
+   * Рейтинги игрока
+   * Метод возвращает рейтинги игроков по заданным идентификаторам.
+   * @category Рейтинги игрока
    * @link ratings/accounts
    * @param array $input
    * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
-   * @param integer|array $input['account_id'] Идентификаторы аккаунтов игроков
-   * @param string $input['type'] Тип рейтинга. Допустимые значения: 
+   * @param string $input['type'] Период формирования рейтинга. Допустимые значения: 
    * * "1" - 1 
    * * "all" - all 
    * * "28" - 28 
    * * "7" - 7 
+   * @param integer|array $input['account_id'] Идентификаторы аккаунтов игроков
    * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
@@ -1054,30 +1294,30 @@ class wgapi_wot_ratings extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @param timestamp/date $input['date'] Дата в формате UNIX timestamp либо ISO 8601. Например, 1376542800 либо 2013-08-15T00:00:00
+   * @param timestamp/date $input['date'] Дата в формате UNIX timestamp или ISO 8601. Например, 1376542800 или 2013-08-15T00:00:00
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function accounts ($i = array()) {
-    $this->erorr->add(array(array(402, "ACCOUNT_ID_NOT_SPECIFIED", "**account_id** не указан"), array(402, "TYPE_NOT_SPECIFIED", "**type** не указан"), array(407, "INVALID_TYPE", "Указан неверный **type**"), array(404, "RATINGS_NOT_FOUND", "Нет рейтинговых данных за указанную дату")));
-    if (!$this->validate($i, array('application_id' => 'string', 'account_id' => 'numeric, list', 'type' => 'string'), array('language' => 'string', 'fields' => 'string', 'date' => 'timestamp/date'))) return NULL;
+    $this->erorr->add(array(array(402, "ACCOUNT_ID_NOT_SPECIFIED", "Не задано значение параметра **account_id**"), array(402, "TYPE_NOT_SPECIFIED", "Не задано значение параметра **type**"), array(407, "INVALID_TYPE", "Неверное значение **type**"), array(404, "RATINGS_NOT_FOUND", "Нет рейтинговых данных на указанную дату")));
+    if (!$this->validate($i, array('application_id' => 'string', 'type' => 'string', 'account_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string', 'date' => 'timestamp/date'))) return NULL;
     $o = $this->send('ratings/accounts', $i, array('http', 'https'));
     return $o;
   }
 
   /**
-   * Соседи игрока по рейтингу
-   * Возвращает список соседей по заданному рейтингу.
-   * @category Рейтинги игроков
+   * Соседние позиции в рейтинге
+   * Метод возвращает список соседних позиций в заданном рейтинге.
+   * @category Рейтинги игрока
    * @link ratings/neighbors
    * @param array $input
    * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
-   * @param integer $input['account_id'] Идентификатор аккаунта игрока
-   * @param string $input['type'] Тип рейтинга. Допустимые значения: 
+   * @param string $input['type'] Период формирования рейтинга. Допустимые значения: 
    * * "1" - 1 
    * * "all" - all 
    * * "28" - 28 
    * * "7" - 7 
+   * @param integer $input['account_id'] Идентификатор аккаунта игрока
    * @param string $input['rank_field'] Категория рейтинга
    * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
@@ -1094,26 +1334,26 @@ class wgapi_wot_ratings extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @param timestamp/date $input['date'] Дата в формате UNIX timestamp либо ISO 8601. Например, 1376542800 либо 2013-08-15T00:00:00
-   * @param integer $input['limit'] Лимит количества соседей
+   * @param timestamp/date $input['date'] Дата в формате UNIX timestamp или ISO 8601. Например, 1376542800 или 2013-08-15T00:00:00
+   * @param integer $input['limit'] Максимальное количество соседних позиций
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function neighbors ($i = array()) {
-    $this->erorr->add(array(array(402, "ACCOUNT_ID_NOT_SPECIFIED", "**account_id** не указан"), array(402, "TYPE_NOT_SPECIFIED", "**type** не указан"), array(407, "INVALID_TYPE", "Указан неверный **type**"), array(402, "RANK_FIELD_NOT_SPECIFIED", "**rank_field** не указан"), array(407, "INVALID_RANK_FIELD", "Указан неверный **rank_field**"), array(404, "RATINGS_NOT_FOUND", "Нет рейтинговых данных за указанную дату")));
-    if (!$this->validate($i, array('application_id' => 'string', 'account_id' => 'numeric', 'type' => 'string', 'rank_field' => 'string'), array('language' => 'string', 'fields' => 'string', 'date' => 'timestamp/date', 'limit' => 'numeric'))) return NULL;
+    $this->erorr->add(array(array(402, "ACCOUNT_ID_NOT_SPECIFIED", "Не задано значение параметра **account_id**"), array(402, "TYPE_NOT_SPECIFIED", "Не задано значение параметра **type**"), array(407, "INVALID_TYPE", "Неверное значение **type**"), array(402, "RANK_FIELD_NOT_SPECIFIED", "Не задано значение параметра **rank_field**"), array(407, "INVALID_RANK_FIELD", "Неверное значение **rank_field**"), array(404, "RATINGS_NOT_FOUND", "Нет рейтинговых данных на указанную дату")));
+    if (!$this->validate($i, array('application_id' => 'string', 'type' => 'string', 'account_id' => 'numeric', 'rank_field' => 'string'), array('language' => 'string', 'fields' => 'string', 'date' => 'timestamp/date', 'limit' => 'numeric'))) return NULL;
     $o = $this->send('ratings/neighbors', $i, array('http', 'https'));
     return $o;
   }
 
   /**
-   * Топ игроков
-   * Возвращает топ игроков по заданному параметру.
-   * @category Рейтинги игроков
+   * Лучшие игроки
+   * Метод возвращает список лучших игроков по заданному параметру.
+   * @category Рейтинги игрока
    * @link ratings/top
    * @param array $input
    * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
-   * @param string $input['type'] Тип рейтинга. Допустимые значения: 
+   * @param string $input['type'] Период формирования рейтинга. Допустимые значения: 
    * * "1" - 1 
    * * "all" - all 
    * * "28" - 28 
@@ -1134,26 +1374,26 @@ class wgapi_wot_ratings extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @param timestamp/date $input['date'] Дата в формате UNIX timestamp либо ISO 8601. Например, 1376542800 либо 2013-08-15T00:00:00
-   * @param integer $input['limit'] Лимит количества игроков в топе
+   * @param timestamp/date $input['date'] Дата в формате UNIX timestamp или ISO 8601. Например, 1376542800 или 2013-08-15T00:00:00
+   * @param integer $input['limit'] Максимальное количество игроков в списке
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function top ($i = array()) {
-    $this->erorr->add(array(array(402, "TYPE_NOT_SPECIFIED", "**type** не указан"), array(407, "INVALID_TYPE", "Указан неверный **type**"), array(402, "RANK_FIELD_NOT_SPECIFIED", "**rank_field** не указан"), array(407, "INVALID_RANK_FIELD", "Указан неверный **rank_field**"), array(404, "RATINGS_NOT_FOUND", "Нет рейтинговых данных за указанную дату")));
+    $this->erorr->add(array(array(402, "TYPE_NOT_SPECIFIED", "Не задано значение параметра **type**"), array(407, "INVALID_TYPE", "Неверное значение **type**"), array(402, "RANK_FIELD_NOT_SPECIFIED", "Не задано значение параметра **rank_field**"), array(407, "INVALID_RANK_FIELD", "Неверное значение **rank_field**"), array(404, "RATINGS_NOT_FOUND", "Нет рейтинговых данных на указанную дату")));
     if (!$this->validate($i, array('application_id' => 'string', 'type' => 'string', 'rank_field' => 'string'), array('language' => 'string', 'fields' => 'string', 'date' => 'timestamp/date', 'limit' => 'numeric'))) return NULL;
     $o = $this->send('ratings/top', $i, array('http', 'https'));
     return $o;
   }
 
   /**
-   * Даты доступных рейтингов
-   * Возвращает даты, за которые есть рейтинговые данные
-   * @category Рейтинги игроков
+   * Даты c доступными рейтингами
+   * Метод возвращает даты, за которые есть рейтинговые данные.
+   * @category Рейтинги игрока
    * @link ratings/dates
    * @param array $input
    * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
-   * @param string $input['type'] Тип рейтинга. Допустимые значения: 
+   * @param string $input['type'] Период формирования рейтинга. Допустимые значения: 
    * * "1" - 1 
    * * "all" - all 
    * * "28" - 28 
@@ -1185,22 +1425,21 @@ class wgapi_wot_ratings extends WgApiCore {
 }
 
 /**
- * Аккаунт 
+ * Аккаунты 
  */
 class wgapi_wot_account extends WgApiCore {
 
   /**
    * Список игроков
-   * Возвращает часть списка игроков, отсортированного по имени и отфильтрованного по его начальной части.
-   * Не возвращает весь список игроков.
-   * @category Аккаунт
+   * Метод возвращает часть списка игроков, отфильтрованную по первым символам имени и отсортированную по алфавиту.
+   * @category Аккаунты
    * @link account/list
    * @param array $input
    * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
    * @param string $input['search'] 
    *     Строка поиска по имени игрока. Вид поиска и минимальная длина строки поиска зависят от параметра type.
-   *     Максимальная длина строки поиска 24 символа.
+   *     Максимальная длина: 24 символа.
    *   
    * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
@@ -1217,23 +1456,23 @@ class wgapi_wot_account extends WgApiCore {
    * * "vi" - Tiếng Việt 
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @param string $input['type'] Тип поиска. Влияет на минимальную длину строки поиска и вид поиска. По умолчанию используется **startswith**. Допустимые значения: 
-   * * "startswith" - Поиск по начальной части имени игрока. Минимальная длина 3 символа, поиск без учета регистра (используется по умолчанию)
-   * * "exact" - Поиск по строгому соответствию имени игрока. Минимальная длина строки поиска 1 символ, поиск без учета регистра 
+   * @param string $input['type'] Тип поиска. Определяет минимальную длину строки поиска и вид поиска. По умолчанию используется значение **startswith**. Допустимые значения: 
+   * * "startswith" - Поиск по первым символам имени игрока. Минимальная длина: 3 символа без учёта регистра. (используется по умолчанию)
+   * * "exact" - Поиск по строгому соответствию имени игрока. Минимальная длина: 1 символ без учёта регистра. 
    * @param integer $input['limit'] Количество возвращаемых записей. Максимальное количество: 100. Если значение неверно или превышает 100, то по умолчанию возвращается 100 записей.
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function lists ($i = array()) {
-    $this->erorr->add(array(array(402, "SEARCH_NOT_SPECIFIED", "Не указан обязательный параметр **search**"), array(407, "NOT_ENOUGH_SEARCH_LENGTH", "Недостаточная длина параметра **search**. Минимум 3 символа")));
+    $this->erorr->add(array(array(402, "SEARCH_NOT_SPECIFIED", "Не задано значение параметра **search**"), array(407, "NOT_ENOUGH_SEARCH_LENGTH", "Недостаточная длина параметра **search**. Минимум: 3 символа.")));
     if (!$this->validate($i, array('application_id' => 'string', 'search' => 'string'), array('language' => 'string', 'fields' => 'string', 'type' => 'string', 'limit' => 'numeric'))) return NULL;
     $o = $this->send('account/list', $i, array('http', 'https'));
     return $o;
   }
 
   /**
-   * Данные игрока
-   * Возвращает информацию об игроке.
-   * @category Аккаунт
+   * Персональные данные игрока
+   * Метод возвращает информацию об игроке.
+   * @category Аккаунты
    * @link account/info
    * @param array $input
    * ----------------------------------------
@@ -1258,16 +1497,16 @@ class wgapi_wot_account extends WgApiCore {
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function info ($i = array()) {
-    $this->erorr->add(array(array(407, "ACCOUNT_ID_LIST_LIMIT_EXCEEDED", "Лимит переданных идентификаторов **account_id** превышен ( >100 )")));
+    $this->erorr->add(array(array(407, "ACCOUNT_ID_LIST_LIMIT_EXCEEDED", "Превышено максимальное количество переданных идентификаторов **account_id**. Максимум: 100.")));
     if (!$this->validate($i, array('application_id' => 'string', 'account_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string', 'access_token' => 'string'))) return NULL;
     $o = $this->send('account/info', $i, array('http', 'https'));
     return $o;
   }
 
   /**
-   * Танки игрока
-   * Возвращает детальную информацию о танках игрока.
-   * @category Аккаунт
+   * Техника игрока
+   * Метод возвращает информацию о технике игрока.
+   * @category Аккаунты
    * @link account/tanks
    * @param array $input
    * ----------------------------------------
@@ -1289,11 +1528,11 @@ class wgapi_wot_account extends WgApiCore {
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
-   * @param integer|array $input['tank_id'] Идентификатор танка игрока
+   * @param integer|array $input['tank_id'] Идентификатор техники игрока
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function tanks ($i = array()) {
-    $this->erorr->add(array(array(407, "ACCOUNT_ID_LIST_LIMIT_EXCEEDED", "Лимит переданных идентификаторов **account_id** превышен ( >100 )")));
+    $this->erorr->add(array(array(407, "ACCOUNT_ID_LIST_LIMIT_EXCEEDED", "Превышено максимальное количество переданных идентификаторов **account_id**. Максимум: 100.")));
     if (!$this->validate($i, array('application_id' => 'string', 'account_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string', 'access_token' => 'string', 'tank_id' => 'numeric, list'))) return NULL;
     $o = $this->send('account/tanks', $i, array('http', 'https'));
     return $o;
@@ -1301,12 +1540,12 @@ class wgapi_wot_account extends WgApiCore {
 
   /**
    * Достижения игрока
-   * Возвращает достижение по игрокам.
+   * Метод возвращает информацию о достижениях игроков.
    * Значения поля **achievements** зависят от свойств достижений (см. [Информация о достижениях](/developers/api_reference/wot/encyclopedia/achievements)):
-   * * от 1 до 4 для знака классности и этапных достижений (type: "class")
-   * * максимальное значение серийных достижений (type: "series")
-   * * количество заработанных наград из секций: Герой битвы, Эпические достижения, Групповые достижения, Особые достижения и тп. (type: "repeatable, single, custom")
-   * @category Аккаунт
+   * * от 1 до 4 для Знаков классности и Этапных достижений (type: "class");
+   * * максимальное значение серийных достижений (type: "series");
+   * * количество заработанных достижений из секций Герой битвы, Эпические достижения, Групповые достижения, Особые достижения и т.п. (type: "repeatable, single, custom").
+   * @category Аккаунты
    * @link account/achievements
    * @param array $input
    * ----------------------------------------
@@ -1338,509 +1577,14 @@ class wgapi_wot_account extends WgApiCore {
 }
 
 /**
- * Мировая война 
- */
-class wgapi_wot_globalwar extends WgApiCore {
-
-  /**
-   * Список кланов на ГК
-   * Возвращает список кланов на карте.
-   * @category Мировая война
-   * @link globalwar/clans
-   * @param array $input
-   * ----------------------------------------
-   * @param string $input['application_id'] Идентификатор приложения
-   * @param string $input['map_id'] Идентификатор карты
-   * ----------------------------------------
-   * @param string $input['language'] Язык локализации. Допустимые значения: 
-   * * "en" - English 
-   * * "ru" - Русский (используется по умолчанию)
-   * * "pl" - Polski 
-   * * "de" - Deutsch 
-   * * "fr" - Français 
-   * * "es" - Español 
-   * * "zh-cn" - 简体中文 
-   * * "tr" - Türkçe 
-   * * "cs" - Čeština 
-   * * "th" - ไทย 
-   * * "vi" - Tiếng Việt 
-   * * "ko" - 한국어 
-   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @param integer $input['limit'] Количество возвращаемых записей. Максимальное количество: 100. Если значение неверно или превышает 100, то по умолчанию возвращается 100 записей.
-   * @param integer $input['page_no'] Номер страницы выдачи
-   * @return array|NULL При возникновенние ошибки выдает NULL.
-   */
-  function clans ($i = array()) {
-    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'limit' => 'numeric', 'page_no' => 'numeric'))) return NULL;
-    $o = $this->send('globalwar/clans', $i, array('http', 'https'));
-    return $o;
-  }
-
-  /**
-   * Информация по актуальному количеству очков славы игрока на ГК
-   * Возвращает достижения игрока на карте.
-   * @category Мировая война
-   * @link globalwar/famepoints
-   * @param array $input
-   * ----------------------------------------
-   * @param string $input['application_id'] Идентификатор приложения
-   * @param string $input['map_id'] Идентификатор карты
-   * @param integer|array $input['account_id'] Идентификатор аккаунта игрока
-   * ----------------------------------------
-   * @param string $input['language'] Язык локализации. Допустимые значения: 
-   * * "en" - English 
-   * * "ru" - Русский (используется по умолчанию)
-   * * "pl" - Polski 
-   * * "de" - Deutsch 
-   * * "fr" - Français 
-   * * "es" - Español 
-   * * "zh-cn" - 简体中文 
-   * * "tr" - Türkçe 
-   * * "cs" - Čeština 
-   * * "th" - ไทย 
-   * * "vi" - Tiếng Việt 
-   * * "ko" - 한국어 
-   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array|NULL При возникновенние ошибки выдает NULL.
-   */
-  function famepoints ($i = array()) {
-    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'account_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string'))) return NULL;
-    $o = $this->send('globalwar/famepoints', $i, array('http', 'https'));
-    return $o;
-  }
-
-  /**
-   * Список доступных карт на ГК
-   * Возвращает список карт на Глобальной карте.
-   * @category Мировая война
-   * @link globalwar/maps
-   * @param array $input
-   * ----------------------------------------
-   * @param string $input['application_id'] Идентификатор приложения
-   * ----------------------------------------
-   * @param string $input['language'] Язык локализации. Допустимые значения: 
-   * * "en" - English 
-   * * "ru" - Русский (используется по умолчанию)
-   * * "pl" - Polski 
-   * * "de" - Deutsch 
-   * * "fr" - Français 
-   * * "es" - Español 
-   * * "zh-cn" - 简体中文 
-   * * "tr" - Türkçe 
-   * * "cs" - Čeština 
-   * * "th" - ไทย 
-   * * "vi" - Tiếng Việt 
-   * * "ko" - 한국어 
-   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array|NULL При возникновенние ошибки выдает NULL.
-   */
-  function maps ($i = array()) {
-    if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string'))) return NULL;
-    $o = $this->send('globalwar/maps', $i, array('http', 'https'));
-    return $o;
-  }
-
-  /**
-   * Список провинций определенной карты на ГК
-   * Возвращает список провинций на карте.
-   * @category Мировая война
-   * @link globalwar/provinces
-   * @param array $input
-   * ----------------------------------------
-   * @param string $input['application_id'] Идентификатор приложения
-   * @param string $input['map_id'] Идентификатор карты
-   * ----------------------------------------
-   * @param string $input['language'] Язык локализации. Допустимые значения: 
-   * * "en" - English 
-   * * "ru" - Русский (используется по умолчанию)
-   * * "pl" - Polski 
-   * * "de" - Deutsch 
-   * * "fr" - Français 
-   * * "es" - Español 
-   * * "zh-cn" - 简体中文 
-   * * "tr" - Türkçe 
-   * * "cs" - Čeština 
-   * * "th" - ไทย 
-   * * "vi" - Tiếng Việt 
-   * * "ko" - 한국어 
-   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @param string|array $input['province_id'] Идентификатор провинции
-   * @return array|NULL При возникновенние ошибки выдает NULL.
-   */
-  function provinces ($i = array()) {
-    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'province_id' => 'string, list'))) return NULL;
-    $o = $this->send('globalwar/provinces', $i, array('http', 'https'));
-    return $o;
-  }
-
-  /**
-   * Список топ кланов на ГК
-   * Возвращает список топ кланов по одному из критериев - количество боев, количество провинций, количество побед.
-   * @category Мировая война
-   * @link globalwar/top
-   * @param array $input
-   * ----------------------------------------
-   * @param string $input['application_id'] Идентификатор приложения
-   * @param string $input['map_id'] Идентификатор карты
-   * @param string $input['order_by'] Вид сортировки.. Допустимые значения: 
-   * * "wins_count" - Количество побед 
-   * * "combats_count" - Количество боев 
-   * * "provinces_count" - Количество провинций 
-   * ----------------------------------------
-   * @param string $input['language'] Язык локализации. Допустимые значения: 
-   * * "en" - English 
-   * * "ru" - Русский (используется по умолчанию)
-   * * "pl" - Polski 
-   * * "de" - Deutsch 
-   * * "fr" - Français 
-   * * "es" - Español 
-   * * "zh-cn" - 简体中文 
-   * * "tr" - Türkçe 
-   * * "cs" - Čeština 
-   * * "th" - ไทย 
-   * * "vi" - Tiếng Việt 
-   * * "ko" - 한국어 
-   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array|NULL При возникновенние ошибки выдает NULL.
-   */
-  function top ($i = array()) {
-    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'order_by' => 'string'), array('language' => 'string', 'fields' => 'string'))) return NULL;
-    $o = $this->send('globalwar/top', $i, array('http', 'https'));
-    return $o;
-  }
-
-  /**
-   * Информация о турнирах на ГК
-   * Возвращает список турниров на карте.
-   * @category Мировая война
-   * @link globalwar/tournaments
-   * @param array $input
-   * ----------------------------------------
-   * @param string $input['application_id'] Идентификатор приложения
-   * @param string $input['map_id'] Идентификатор карты
-   * @param string $input['province_id'] Идентификатор провинции
-   * ----------------------------------------
-   * @param string $input['language'] Язык локализации. Допустимые значения: 
-   * * "en" - English 
-   * * "ru" - Русский (используется по умолчанию)
-   * * "pl" - Polski 
-   * * "de" - Deutsch 
-   * * "fr" - Français 
-   * * "es" - Español 
-   * * "zh-cn" - 简体中文 
-   * * "tr" - Türkçe 
-   * * "cs" - Čeština 
-   * * "th" - ไทย 
-   * * "vi" - Tiếng Việt 
-   * * "ko" - 한국어 
-   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @return array|NULL При возникновенние ошибки выдает NULL.
-   */
-  function tournaments ($i = array()) {
-    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'province_id' => 'string'), array('language' => 'string', 'fields' => 'string'))) return NULL;
-    $o = $this->send('globalwar/tournaments', $i, array('http', 'https'));
-    return $o;
-  }
-
-  /**
-   * История очков славы игрока
-   * История начислений очков победы для игрока
-   * @category Мировая война
-   * @link globalwar/famepointshistory
-   * @param array $input
-   * ----------------------------------------
-   * @param string $input['application_id'] Идентификатор приложения
-   * @param string $input['map_id'] Идентификатор карты
-   * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
-   * ----------------------------------------
-   * @param string $input['language'] Язык локализации. Допустимые значения: 
-   * * "en" - English 
-   * * "ru" - Русский (используется по умолчанию)
-   * * "pl" - Polski 
-   * * "de" - Deutsch 
-   * * "fr" - Français 
-   * * "es" - Español 
-   * * "zh-cn" - 简体中文 
-   * * "tr" - Türkçe 
-   * * "cs" - Čeština 
-   * * "th" - ไทย 
-   * * "vi" - Tiếng Việt 
-   * * "ko" - 한국어 
-   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @param timestamp/date $input['since'] Начало периода
-   * @param timestamp/date $input['until'] Конец периода
-   * @param integer $input['page_no'] Номер страницы выдачи
-   * @param integer $input['limit'] Количество возвращаемых записей. Максимальное количество: 100. Если значение неверно или превышает 100, то по умолчанию возвращается 100 записей.
-   * @return array|NULL При возникновенние ошибки выдает NULL.
-   */
-  function famepointshistory ($i = array()) {
-    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'access_token' => 'string'), array('language' => 'string', 'fields' => 'string', 'since' => 'timestamp/date', 'until' => 'timestamp/date', 'page_no' => 'numeric', 'limit' => 'numeric'))) return NULL;
-    $o = $this->send('globalwar/famepointshistory', $i, array('https'));
-    return $o;
-  }
-
-  /**
-   * Аллея славы
-   * Топ игроков по очкам славы
-   * @category Мировая война
-   * @link globalwar/alleyoffame
-   * @param array $input
-   * ----------------------------------------
-   * @param string $input['application_id'] Идентификатор приложения
-   * @param string $input['map_id'] Идентификатор карты
-   * ----------------------------------------
-   * @param string $input['language'] Язык локализации. Допустимые значения: 
-   * * "en" - English 
-   * * "ru" - Русский (используется по умолчанию)
-   * * "pl" - Polski 
-   * * "de" - Deutsch 
-   * * "fr" - Français 
-   * * "es" - Español 
-   * * "zh-cn" - 简体中文 
-   * * "tr" - Türkçe 
-   * * "cs" - Čeština 
-   * * "th" - ไทย 
-   * * "vi" - Tiếng Việt 
-   * * "ko" - 한국어 
-   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @param integer $input['page_no'] Номер страницы выдачи
-   * @param integer $input['limit'] Количество возвращаемых записей. Максимальное количество: 100. Если значение неверно или превышает 100, то по умолчанию возвращается 100 записей.
-   * @return array|NULL При возникновенние ошибки выдает NULL.
-   */
-  function alleyoffame ($i = array()) {
-    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'page_no' => 'numeric', 'limit' => 'numeric'))) return NULL;
-    $o = $this->send('globalwar/alleyoffame', $i, array('http', 'https'));
-    return $o;
-  }
-
-  /**
-   * Список боёв клана
-   * Возвращает список боев клана.
-   * @category Мировая война
-   * @link globalwar/battles
-   * @param array $input
-   * ----------------------------------------
-   * @param string $input['application_id'] Идентификатор приложения
-   * @param string $input['map_id'] Идентификатор карты
-   * @param integer|array $input['clan_id'] Идентификатор клана
-   * ----------------------------------------
-   * @param string $input['language'] Язык локализации. Допустимые значения: 
-   * * "en" - English 
-   * * "ru" - Русский (используется по умолчанию)
-   * * "pl" - Polski 
-   * * "de" - Deutsch 
-   * * "fr" - Français 
-   * * "es" - Español 
-   * * "zh-cn" - 简体中文 
-   * * "tr" - Türkçe 
-   * * "cs" - Čeština 
-   * * "th" - ไทย 
-   * * "vi" - Tiếng Việt 
-   * * "ko" - 한국어 
-   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
-   * @return array|NULL При возникновенние ошибки выдает NULL.
-   */
-  function battles ($i = array()) {
-    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'clan_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string', 'access_token' => 'string'))) return NULL;
-    $o = $this->send('globalwar/battles', $i, array('http', 'https'));
-    return $o;
-  }
-
-  /**
-   * История начисления очков победы клана
-   * История начислений очков победы для клана
-   * @category Мировая война
-   * @link globalwar/victorypointshistory
-   * @param array $input
-   * ----------------------------------------
-   * @param string $input['application_id'] Идентификатор приложения
-   * @param string $input['map_id'] Идентификатор карты
-   * @param integer $input['clan_id'] Идентификатор клана
-   * ----------------------------------------
-   * @param string $input['language'] Язык локализации. Допустимые значения: 
-   * * "en" - English 
-   * * "ru" - Русский (используется по умолчанию)
-   * * "pl" - Polski 
-   * * "de" - Deutsch 
-   * * "fr" - Français 
-   * * "es" - Español 
-   * * "zh-cn" - 简体中文 
-   * * "tr" - Türkçe 
-   * * "cs" - Čeština 
-   * * "th" - ไทย 
-   * * "vi" - Tiếng Việt 
-   * * "ko" - 한국어 
-   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
-   * @param timestamp/date $input['since'] Начало периода
-   * @param timestamp/date $input['until'] Конец периода
-   * @param integer $input['offset'] Сдвиг относительно первого результата
-   * @param integer $input['limit'] Кол-во результатов (от 20 до 100)
-   * @return array|NULL При возникновенние ошибки выдает NULL.
-   */
-  function victorypointshistory ($i = array()) {
-    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'clan_id' => 'numeric'), array('language' => 'string', 'fields' => 'string', 'since' => 'timestamp/date', 'until' => 'timestamp/date', 'offset' => 'numeric', 'limit' => 'numeric'))) return NULL;
-    $o = $this->send('globalwar/victorypointshistory', $i, array('http', 'https'));
-    return $o;
-  }
-
-}
-
-/**
- * Аутентификация 
- */
-class wgapi_wot_auth extends WgApiCore {
-
-  /**
-   * Вход по OpenID
-   * Осуществляет аутентификацию пользователя с использованием WarGaming.Net ID (OpenID).
-   * На странице аутентификации пользователю необходимо ввести свой логин и пароль.
-   * Информация о статусе авторизации будет отправлена по адресу указаному в параметре **redirect_uri**.
-   * Параметры к **redirect_uri** при успешной аутентификации:
-   * * **status** - ok, аутентификация пройдена
-   * * **access_token** - Ключ доступа, передается во все методы требующие аутентификацию.
-   * * **expires_at** - Время окончания срока действия **access_token**.
-   * * **account_id** - Идентификатор залогиненного аккаунта.
-   * * **nickname** - Имя залогиненного аккаунта.
-   * Параметры к **redirect_uri** если произошла ошибка:
-   * * **status** - error, ошибка аутентификации.
-   * * **code** - Код ошибки.
-   * * **message** - Сообщение с информацией об ошибке.
-   * @category Аутентификация
-   * @link auth/login
-   * @param array $input
-   * ----------------------------------------
-   * @param string $input['application_id'] Идентификатор приложения
-   * ----------------------------------------
-   * @param string $input['language'] Язык локализации. Допустимые значения: 
-   * * "en" - English 
-   * * "ru" - Русский (используется по умолчанию)
-   * * "pl" - Polski 
-   * * "de" - Deutsch 
-   * * "fr" - Français 
-   * * "es" - Español 
-   * * "zh-cn" - 简体中文 
-   * * "tr" - Türkçe 
-   * * "cs" - Čeština 
-   * * "th" - ไทย 
-   * * "vi" - Tiếng Việt 
-   * * "ko" - 한국어 
-   * @param integer $input['expires_at'] Конечный период в UTC до которого должен работать **access_token**. Можно также указать дельту в секундах, сколько должен действовать **access_token**.
-   * Конечный период и дельта не должны превышать двух недель от текущего времени.
-   * @param string $input['redirect_uri'] 
-   * URL на который будет переброшен пользователь после того как он пройдет аутентификацию.
-   * По умолчанию: [{API_HOST}/blank/](https://{API_HOST}/blank/)
-   * @param string $input['display'] Внешний вид формы для мобильных. Допустимые значения: page, popup
-   * @param integer $input['nofollow'] При передаче параметра nofollow=1 URL будет возвращен в теле ответа вместо редиректа
-   * @return array|NULL При возникновенние ошибки выдает NULL.
-   */
-  function login ($i = array()) {
-    $this->erorr->add(array(array(401, "AUTH_CANCEL", "Пользователь отменил авторизацию для приложения"), array(403, "AUTH_EXPIRED", "Превышено время ожидания подтверждения авторизации пользователем"), array(410, "AUTH_ERROR", "Ошибка аутентификации")));
-    $mr = isset($i['return']) ? 'return' : 'location';
-    if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'expires_at' => 'numeric', 'redirect_uri' => 'string', 'display' => 'string', 'nofollow' => 'numeric'))) return NULL;
-    if (!isset($i['redirect_uri']) || empty($i['redirect_uri'])) $i['redirect_uri'] = $_SERVER['REQUEST_SCHEME'] . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
-    $n = get_called_class();
-    if (preg_match('/\?/i', $i['redirect_uri'])) $i['redirect_uri'] .= '&' . $n . '=' . __FUNCTION__;
-    else $i['redirect_uri'] .= '?' . $n . '=' . __FUNCTION__;
-    $o = $_REQUEST;
-    if (isset($o[$n]) && $o[$n] == 'login') {
-      unset($o[$n]);
-      //при отсутствие статуса выводим полученный масив
-      if (!isset($o['status'])) return $o;
-      //при верном статусе возвращаем данные
-      if ($o['status'] == 'ok') { unset($o['status']); return $o;}
-      //при ошибки переводим обработчик ошибок
-      $er = $o;
-      //присвоенние ошибки
-      $this->erorr->set($er, 'auth/login', $i);
-      switch ((string) $er['message']) {
-        //выполняем обновление клиента
-        case 'METHOD_DISABLED':
-        case 'METHOD_NOT_FOUND': $this->update(); break;
-      }
-      return NULL;
-    }
-    $o = $this->redirect('auth/login', $i, array('https'), $mr);
-    return $o;
-  }
-
-  /**
-   * Продление access_token
-   * Выдает новый **access_token** на основе действующего.
-   * Используется для тех случаев когда пользователь все еще пользуется приложением, а срок действия его **access_token** уже подходит к концу.
-   * @category Аутентификация
-   * @link auth/prolongate
-   * @param array $input
-   * ----------------------------------------
-   * @param string $input['application_id'] Идентификатор приложения
-   * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
-   * ----------------------------------------
-   * @param string $input['language'] Язык локализации. Допустимые значения: 
-   * * "en" - English 
-   * * "ru" - Русский (используется по умолчанию)
-   * * "pl" - Polski 
-   * * "de" - Deutsch 
-   * * "fr" - Français 
-   * * "es" - Español 
-   * * "zh-cn" - 简体中文 
-   * * "tr" - Türkçe 
-   * * "cs" - Čeština 
-   * * "th" - ไทย 
-   * * "vi" - Tiếng Việt 
-   * * "ko" - 한국어 
-   * @param integer $input['expires_at'] Конечный период в UTC до которого должен работать **access_token**. Можно также указать дельту в секундах, сколько должен действовать **access_token**.
-   * Конечный период и дельта не должны превышать двух недель от текущего времени.
-   * @return array|NULL При возникновенние ошибки выдает NULL.
-   */
-  function prolongate ($i = array()) {
-    if (!$this->validate($i, array('application_id' => 'string', 'access_token' => 'string'), array('language' => 'string', 'expires_at' => 'numeric'))) return NULL;
-    $o = $this->send('auth/prolongate', $i, array('https'));
-    return $o;
-  }
-
-  /**
-   * Выход (забыть аутентификацию)
-   * Удаляет данные авторизации пользователя на доступ к его персональным данным.
-   * После вызова данного метода перестанет действовать **access_token**.
-   * @category Аутентификация
-   * @link auth/logout
-   * @param array $input
-   * ----------------------------------------
-   * @param string $input['application_id'] Идентификатор приложения
-   * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
-   * ----------------------------------------
-   * @param string $input['language'] Язык локализации. Допустимые значения: 
-   * * "en" - English 
-   * * "ru" - Русский (используется по умолчанию)
-   * * "pl" - Polski 
-   * * "de" - Deutsch 
-   * * "fr" - Français 
-   * * "es" - Español 
-   * * "zh-cn" - 简体中文 
-   * * "tr" - Türkçe 
-   * * "cs" - Čeština 
-   * * "th" - ไทย 
-   * * "vi" - Tiếng Việt 
-   * * "ko" - 한국어 
-   * @return array|NULL При возникновенние ошибки выдает NULL.
-   */
-  function logout ($i = array()) {
-    if (!$this->validate($i, array('application_id' => 'string', 'access_token' => 'string'), array('language' => 'string'))) return NULL;
-    $o = $this->send('auth/logout', $i, array('https'));
-    return $o;
-  }
-
-}
-
-/**
- * Энциклопедия 
+ * Танкопедия 
  */
 class wgapi_wot_encyclopedia extends WgApiCore {
 
   /**
-   * Список танков
-   * Возвращает список всех танков из танкопедии.
-   * @category Энциклопедия
+   * Список техники
+   * Метод возвращает список всей техники из Танкопедии.
+   * @category Танкопедия
    * @link encyclopedia/tanks
    * @param array $input
    * ----------------------------------------
@@ -1870,13 +1614,13 @@ class wgapi_wot_encyclopedia extends WgApiCore {
 
   /**
    * Информация о технике
-   * Возвращает информацию о танке из танкопедии.
-   * @category Энциклопедия
+   * Метод возвращает информацию о технике из Танкопедии.
+   * @category Танкопедия
    * @link encyclopedia/tankinfo
    * @param array $input
    * ----------------------------------------
    * @param string $input['application_id'] Идентификатор приложения
-   * @param integer|array $input['tank_id'] Идентификатор танка
+   * @param integer|array $input['tank_id'] Идентификатор техники
    * ----------------------------------------
    * @param string $input['language'] Язык локализации. Допустимые значения: 
    * * "en" - English 
@@ -1901,9 +1645,9 @@ class wgapi_wot_encyclopedia extends WgApiCore {
   }
 
   /**
-   * Список двигателей танков
-   * Метод возвращает список двигателей танков.
-   * @category Энциклопедия
+   * Двигатели
+   * Метод возвращает список двигателей.
+   * @category Танкопедия
    * @link encyclopedia/tankengines
    * @param array $input
    * ----------------------------------------
@@ -1941,9 +1685,9 @@ class wgapi_wot_encyclopedia extends WgApiCore {
   }
 
   /**
-   * Список башен танков
-   * Метод возвращает список башен танков.
-   * @category Энциклопедия
+   * Башни
+   * Метод возвращает список башен.
+   * @category Танкопедия
    * @link encyclopedia/tankturrets
    * @param array $input
    * ----------------------------------------
@@ -1981,9 +1725,9 @@ class wgapi_wot_encyclopedia extends WgApiCore {
   }
 
   /**
-   * Список радиостанций танков
-   * Метод возвращает список радиостанций танков.
-   * @category Энциклопедия
+   * Радиостанции
+   * Метод возвращает список радиостанций.
+   * @category Танкопедия
    * @link encyclopedia/tankradios
    * @param array $input
    * ----------------------------------------
@@ -2021,9 +1765,9 @@ class wgapi_wot_encyclopedia extends WgApiCore {
   }
 
   /**
-   * Список ходовых танков
-   * Метод возвращает список ходовых танков.
-   * @category Энциклопедия
+   * Ходовые
+   * Метод возвращает список ходовых.
+   * @category Танкопедия
    * @link encyclopedia/tankchassis
    * @param array $input
    * ----------------------------------------
@@ -2061,7 +1805,7 @@ class wgapi_wot_encyclopedia extends WgApiCore {
   }
 
   /**
-   * Список орудий танков
+   * Орудия
    * Метод возвращает список орудий танков.
    * Возможны изменения логики работы метода и значений некоторых полей в зависимости от переданных дополнительных параметров.
    * Поля, которые могут измениться:
@@ -2071,11 +1815,11 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * * **price_credit**
    * * **price_gold**
    * Влияние дополнительных входных параметров:
-   * * передан корректный **turret_id** — происходит фильтрация по принадлежности орудий к башне и изменение вышеуказанных характеристик в зависимости от башни
-   * * передан корректный **turret_id** и **module_id** — возвращает информацию по каждому модулю с измененными вышеуказанными характеристиками в зависимости от башни или null, если модуль и башня не совместимы
-   * * передан корректный **tank_id** - если тип танка соответствует одному из AT-SPG, SPG, mediumTank — будет проведена фильтрация по по принадлежности орудий к танку и изменены вышеуказанные характеристики в зависимости от танка. В противном случае будет возвращена ошибка о необходимости указания **turret_id**. Если переданы еще и **module_id**, то будет возвращена информация о каждом модуле с измененными вышеуказанными характеристиками в зависимости от танка или null, если модуль с танком не совместим
-   * * переданы совместимые **turret_id** и **tank_id** — происходит фильтрация по принадлежности орудий к башне и танку, и изменение вышеуказанных характеристик в зависимости от башни
-   * @category Энциклопедия
+   * * передан корректный **turret_id** — происходит фильтрация по принадлежности орудий к башне и изменение вышеуказанных характеристик в зависимости от башни;
+   * * передан корректный **turret_id** и **module_id** — возвращает информацию по каждому модулю с изменёнными вышеуказанными характеристиками в зависимости от башни, или null, если модуль и башня не совместимы;
+   * * передан корректный **tank_id** — если тип танка соответствует одному из AT-SPG, SPG, mediumTank, проводится фильтрация по принадлежности орудий к танку, вышеуказанные характеристики изменяются в зависимости от танка; в противном случае возвращается ошибка с требованием указать **turret_id**. Если переданы еще и **module_id**, то возвращается информация о каждом модуле с изменёнными вышеуказанными характеристиками в зависимости от танка, или null, если модуль не совместим с танком;
+   * * переданы совместимые **turret_id** и **tank_id** — происходит фильтрация по принадлежности орудий к башне и танку, вышеуказанные характеристики изменяются в зависимости от башни.
+   * @category Танкопедия
    * @link encyclopedia/tankguns
    * @param array $input
    * ----------------------------------------
@@ -2105,7 +1849,7 @@ class wgapi_wot_encyclopedia extends WgApiCore {
    * * "china" - Китай 
    * * "japan" - Япония 
    * @param integer $input['turret_id'] Идентификатор совместимой башни
-   * @param integer $input['tank_id'] Идентификатор совместимого танка
+   * @param integer $input['tank_id'] Идентификатор совместимой техники
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function tankguns ($i = array()) {
@@ -2116,7 +1860,7 @@ class wgapi_wot_encyclopedia extends WgApiCore {
 
   /**
    * Достижения
-   * @category Энциклопедия
+   * @category Танкопедия
    * @link encyclopedia/achievements
    * @param array $input
    * ----------------------------------------
@@ -2147,7 +1891,7 @@ class wgapi_wot_encyclopedia extends WgApiCore {
   /**
    * Информация о Танкопедии
    * Метод возвращает информацию о Танкопедии.
-   * @category Энциклопедия
+   * @category Танкопедия
    * @link encyclopedia/info
    * @param array $input
    * ----------------------------------------
@@ -2174,17 +1918,48 @@ class wgapi_wot_encyclopedia extends WgApiCore {
     return $o;
   }
 
+  /**
+   * Информация об игровых картах
+   * Метод возвращает информацию об игровых картах.
+   * @category Танкопедия
+   * @link encyclopedia/arenas
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function arenas ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string'))) return NULL;
+    $o = $this->send('encyclopedia/arenas', $i, array('http', 'https'));
+    return $o;
+  }
+
 }
 
 /**
- * Танки игрока 
+ * Техника игрока 
  */
 class wgapi_wot_tanks extends WgApiCore {
 
   /**
-   * Статистика по танкам игрока
-   * Возвращает общую, ротную и клановую статистику по каждому танку каждого пользователя.
-   * @category Танки игрока
+   * Статистика по технике игрока
+   * Метод возвращает общую, ротную и клановую статистику по каждой единице техники каждого пользователя.
+   * @category Техника игрока
    * @link tanks/stats
    * @param array $input
    * ----------------------------------------
@@ -2206,10 +1981,10 @@ class wgapi_wot_tanks extends WgApiCore {
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
-   * @param integer|array $input['tank_id'] Идентификатор танка игрока
-   * @param string $input['in_garage'] Фильтрация по присутствию танка в гараже. Если параметр не указан, возвращаются все танки.Параметр обрабатывается только при наличии валидного access_token для указанного account_id. Допустимые значения: 
-   * * "1" - Возвращать только танки из гаража 
-   * * "0" - Возвращать танки, которых уже нет в гараже 
+   * @param integer|array $input['tank_id'] Идентификатор техники игрока
+   * @param string $input['in_garage'] Фильтр по наличию техники в Ангаре. Если параметр не указан, возвращается вся техника. Параметр обрабатывается только при наличии действующего access_token для указанного account_id.. Допустимые значения: 
+   * * "1" - Возвращать технику из Ангара. 
+   * * "0" - Возвращать технику, которой уже нет в Ангаре. 
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function stats ($i = array()) {
@@ -2219,13 +1994,13 @@ class wgapi_wot_tanks extends WgApiCore {
   }
 
   /**
-   * Достижения по танкам игрока
-   * Возвращает список достижений по всем танкам игрока.
+   * Достижения по технике игрока
+   * Метод возвращает список достижений по всей технике игрока.
    * Значения поля **achievements** зависят от свойств достижений (см. [Информация о достижениях]( /developers/api_reference/wot/encyclopedia/achievements )):
    * * степень от 1 до 4 для знака классности и этапных достижений (type: "class")
    * * максимальное значение серийных достижений (type: "series")
-   * * количество заработанных наград из секций: Герой битвы, Эпические достижения, Групповые достижения, Особые достижения и тп. (type: "repeatable, single, custom")
-   * @category Танки игрока
+   * * количество заработанных наград из секций: Герой битвы, Эпические достижения, Групповые достижения, Особые достижения и т.п. (type: "repeatable, single, custom")
+   * @category Техника игрока
    * @link tanks/achievements
    * @param array $input
    * ----------------------------------------
@@ -2247,15 +2022,705 @@ class wgapi_wot_tanks extends WgApiCore {
    * * "ko" - 한국어 
    * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
    * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
-   * @param integer|array $input['tank_id'] Идентификатор танка игрока
-   * @param string $input['in_garage'] Фильтрация по присутствию танка в гараже. Если параметр не указан, возвращаются все танки.Параметр обрабатывается только при наличии валидного access_token для указанного account_id. Допустимые значения: 
-   * * "1" - Возвращать только танки из гаража 
-   * * "0" - Возвращать танки, которых уже нет в гараже 
+   * @param integer|array $input['tank_id'] Идентификатор техники игрока
+   * @param string $input['in_garage'] Фильтр по наличию техники в Ангаре. Если параметр не указан, возвращается вся техника. Параметр обрабатывается только при наличии действующего access_token для указанного account_id.. Допустимые значения: 
+   * * "1" - Возвращать технику из Ангара. 
+   * * "0" - Возвращать технику, которой уже нет в Ангаре. 
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
   function achievements ($i = array()) {
     if (!$this->validate($i, array('application_id' => 'string', 'account_id' => 'numeric'), array('language' => 'string', 'fields' => 'string', 'access_token' => 'string', 'tank_id' => 'numeric, list', 'in_garage' => 'string'))) return NULL;
     $o = $this->send('tanks/achievements', $i, array('http', 'https'));
+    return $o;
+  }
+
+}
+
+/**
+ * Рейтинги кланов 
+ */
+class wgapi_wot_clanratings extends WgApiCore {
+
+  /**
+   * Типы рейтингов
+   * Метод возвращает информацию о типах и категориях рейтингов.
+   * @category Рейтинги кланов
+   * @link clanratings/types
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function types ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string'))) return NULL;
+    $o = $this->send('clanratings/types', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * Даты c доступными рейтингами
+   * Метод возвращает даты, за которые есть рейтинговые данные.
+   * @category Рейтинги кланов
+   * @link clanratings/dates
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['type'] Период формирования рейтинга. Допустимые значения: 
+   * * "1" - 1 
+   * * "all" - all 
+   * * "28" - 28 
+   * * "7" - 7 
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param integer|array $input['clan_id'] Идентификатор клана
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function dates ($i = array()) {
+    $this->erorr->add(array(array(402, "TYPE_NOT_SPECIFIED", "Не задано значение параметра **type**"), array(407, "INVALID_TYPE", "Неверное значение **type**"), array(407, "INVALID_CLAN_ID", "Неверное значение **clan_id**")));
+    if (!$this->validate($i, array('application_id' => 'string', 'type' => 'string'), array('language' => 'string', 'fields' => 'string', 'clan_id' => 'numeric, list'))) return NULL;
+    $o = $this->send('clanratings/dates', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * Лучшие кланы
+   * Метод возвращает список лучших кланов по заданным параметрам.
+   * @category Рейтинги кланов
+   * @link clanratings/top
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['type'] Период формирования рейтинга. Допустимые значения: 
+   * * "1" - 1 
+   * * "all" - all 
+   * * "28" - 28 
+   * * "7" - 7 
+   * @param string $input['rank_field'] Категория рейтинга
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param timestamp/date $input['date'] Дата расчёта рейтингов. Не больше, чем 7 дней до текущей даты; по умолчанию - вчера. Дата в формате UNIX timestamp или ISO 8601. Например, 1376542800 или 2013-08-15T00:00:00
+   * @param integer $input['limit'] Максимальное количество кланов в списке. Максимум: 1000, по умолчанию: 10.
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function top ($i = array()) {
+    $this->erorr->add(array(array(402, "TYPE_NOT_SPECIFIED", "Не задано значение параметра **type**"), array(402, "RANK_FIELD_NOT_SPECIFIED", "Не задано значение параметра **rank_field**"), array(404, "RATINGS_NOT_FOUND", "Нет рейтинговых данных на указанную дату"), array(407, "INVALID_TYPE", "Неверное значение **type**"), array(407, "INVALID_LIMIT", "Неверное значение **limit**"), array(407, "INVALID_RANK_FIELD", "Неверное значение **rank_field**")));
+    if (!$this->validate($i, array('application_id' => 'string', 'type' => 'string', 'rank_field' => 'string'), array('language' => 'string', 'fields' => 'string', 'date' => 'timestamp/date', 'limit' => 'numeric'))) return NULL;
+    $o = $this->send('clanratings/top', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * Рейтинги кланов
+   * Метод возвращает рейтинги кланов по заданным идентификаторам.
+   * @category Рейтинги кланов
+   * @link clanratings/clans
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['type'] Период формирования рейтинга. Допустимые значения: 
+   * * "1" - 1 
+   * * "all" - all 
+   * * "28" - 28 
+   * * "7" - 7 
+   * @param integer|array $input['clan_id'] Идентификаторы кланов
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param timestamp/date $input['date'] Дата расчёта рейтингов. Не больше, чем 7 дней до текущей даты; по умолчанию - вчера. Дата в формате UNIX timestamp или ISO 8601. Например, 1376542800 или 2013-08-15T00:00:00
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function clans ($i = array()) {
+    $this->erorr->add(array(array(402, "CLAN_ID_NOT_SPECIFIED", "Не задано значение параметра **clan_id**"), array(402, "TYPE_NOT_SPECIFIED", "Не задано значение параметра **type**"), array(404, "RATINGS_NOT_FOUND", "Нет рейтинговых данных на указанную дату"), array(407, "INVALID_TYPE", "Неверное значение **type**"), array(407, "INVALID_CLAN_ID", "Неверное значение **clan_id**")));
+    if (!$this->validate($i, array('application_id' => 'string', 'type' => 'string', 'clan_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string', 'date' => 'timestamp/date'))) return NULL;
+    $o = $this->send('clanratings/clans', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * Соседние позиции в рейтинге кланов
+   * Метод возвращает список соседних позиций в заданном рейтинге кланов.
+   * @category Рейтинги кланов
+   * @link clanratings/neighbors
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['type'] Период формирования рейтинга. Допустимые значения: 
+   * * "1" - 1 
+   * * "all" - all 
+   * * "28" - 28 
+   * * "7" - 7 
+   * @param integer $input['clan_id'] Идентификатор клана
+   * @param string $input['rank_field'] Категория рейтинга
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param timestamp/date $input['date'] Дата расчёта рейтингов. Не больше, чем 7 дней до текущей даты; по умолчанию - вчера. Дата в формате UNIX timestamp или ISO 8601. Например, 1376542800 или 2013-08-15T00:00:00
+   * @param integer $input['limit'] Максимальное количество соседних позиций в рейтинге кланов. Максимум: 50; по умолчанию: 5.
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function neighbors ($i = array()) {
+    $this->erorr->add(array(array(402, "CLAN_ID_NOT_SPECIFIED", "Не задано значение параметра **clan_id**"), array(402, "TYPE_NOT_SPECIFIED", "Не задано значение параметра **type**"), array(402, "RANK_FIELD_NOT_SPECIFIED", "Не задано значение параметра **rank_field**"), array(404, "RATINGS_NOT_FOUND", "Нет рейтинговых данных на указанную дату"), array(407, "INVALID_TYPE", "Неверное значение **type**"), array(407, "INVALID_LIMIT", "Неверное значение **limit**"), array(407, "INVALID_RANK_FIELD", "Неверное значение **rank_field**")));
+    if (!$this->validate($i, array('application_id' => 'string', 'type' => 'string', 'clan_id' => 'numeric', 'rank_field' => 'string'), array('language' => 'string', 'fields' => 'string', 'date' => 'timestamp/date', 'limit' => 'numeric'))) return NULL;
+    $o = $this->send('clanratings/neighbors', $i, array('http', 'https'));
+    return $o;
+  }
+
+}
+
+/**
+ * «Мировая война» 
+ */
+class wgapi_wot_globalwar extends WgApiCore {
+
+  /**
+   * Кланы
+   * Метод возвращает список кланов, участвующих в «Мировой войне».
+   * @category «Мировая война»
+   * @link globalwar/clans
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['map_id'] Идентификатор Глобальной карты
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param integer $input['limit'] Количество возвращаемых записей. Максимальное количество: 100. Если значение неверно или превышает 100, то по умолчанию возвращается 100 записей.
+   * @param integer $input['page_no'] Номер страницы результатов
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function clans ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'limit' => 'numeric', 'page_no' => 'numeric'))) return NULL;
+    $o = $this->send('globalwar/clans', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * Очки славы
+   * Метод возвращает достижения игрока в «Мировой войне».
+   * @category «Мировая война»
+   * @link globalwar/famepoints
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['map_id'] Идентификатор Глобальной карты
+   * @param integer|array $input['account_id'] Идентификатор аккаунта игрока
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function famepoints ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'account_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string'))) return NULL;
+    $o = $this->send('globalwar/famepoints', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * Карты
+   * Метод возвращает список карт в «Мировой войне».
+   * @category «Мировая война»
+   * @link globalwar/maps
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function maps ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'fields' => 'string'))) return NULL;
+    $o = $this->send('globalwar/maps', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * Провинции
+   * Метод возвращает список провинций на Глобальной карте.
+   * @category «Мировая война»
+   * @link globalwar/provinces
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['map_id'] Идентификатор Глобальной карты
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param string|array $input['province_id'] Идентификатор провинции
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function provinces ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'province_id' => 'string, list'))) return NULL;
+    $o = $this->send('globalwar/provinces', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * Лучшие кланы
+   * Метод возвращает список лучших кланов по одному из критериев: количество боёв, количество побед, количество провинций.
+   * @category «Мировая война»
+   * @link globalwar/top
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['map_id'] Идентификатор Глобальной карты
+   * @param string $input['order_by'] Вид сортировки. Допустимые значения: 
+   * * "wins_count" - Количество побед клана 
+   * * "combats_count" - Количество боёв клана 
+   * * "provinces_count" - Количество провинций клана 
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function top ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'order_by' => 'string'), array('language' => 'string', 'fields' => 'string'))) return NULL;
+    $o = $this->send('globalwar/top', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * Турниры
+   * Метод возвращает список турниров на Глобальной карте.
+   * @category «Мировая война»
+   * @link globalwar/tournaments
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['map_id'] Идентификатор Глобальной карты
+   * @param string $input['province_id'] Идентификатор провинции
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function tournaments ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'province_id' => 'string'), array('language' => 'string', 'fields' => 'string'))) return NULL;
+    $o = $this->send('globalwar/tournaments', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * История начисления очков славы игрока
+   * Метод возвращает историю начисления очков славы игроку
+   * @category «Мировая война»
+   * @link globalwar/famepointshistory
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['map_id'] Идентификатор Глобальной карты
+   * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param timestamp/date $input['since'] Начало этапа
+   * @param timestamp/date $input['until'] Конец этапа
+   * @param integer $input['page_no'] Номер страницы результатов
+   * @param integer $input['limit'] Количество возвращаемых записей. Максимальное количество: 100. Если значение неверно или превышает 100, то по умолчанию возвращается 100 записей.
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function famepointshistory ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'access_token' => 'string'), array('language' => 'string', 'fields' => 'string', 'since' => 'timestamp/date', 'until' => 'timestamp/date', 'page_no' => 'numeric', 'limit' => 'numeric'))) return NULL;
+    $o = $this->send('globalwar/famepointshistory', $i, array('https'));
+    return $o;
+  }
+
+  /**
+   * Аллея славы
+   * Метод возвращает рейтинг игроков по очкам славы
+   * @category «Мировая война»
+   * @link globalwar/alleyoffame
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['map_id'] Идентификатор Глобальной карты
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param integer $input['page_no'] Номер страницы результатов
+   * @param integer $input['limit'] Количество возвращаемых записей. Максимальное количество: 100. Если значение неверно или превышает 100, то по умолчанию возвращается 100 записей.
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function alleyoffame ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string'), array('language' => 'string', 'fields' => 'string', 'page_no' => 'numeric', 'limit' => 'numeric'))) return NULL;
+    $o = $this->send('globalwar/alleyoffame', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * Бои клана
+   * Метод возвращает список боёв клана.
+   * @category «Мировая война»
+   * @link globalwar/battles
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['map_id'] Идентификатор Глобальной карты
+   * @param integer|array $input['clan_id'] Идентификатор клана
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function battles ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'clan_id' => 'numeric, list'), array('language' => 'string', 'fields' => 'string', 'access_token' => 'string'))) return NULL;
+    $o = $this->send('globalwar/battles', $i, array('http', 'https'));
+    return $o;
+  }
+
+  /**
+   * История начисления очков победы клана
+   * Метод возвращает историю начислений очков победы клана.
+   * @category «Мировая война»
+   * @link globalwar/victorypointshistory
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['map_id'] Идентификатор Глобальной карты
+   * @param integer $input['clan_id'] Идентификатор клана
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param string $input['fields'] Список полей ответа. Поля разделяются запятыми. Вложенные поля разделяются точками. Если параметр не указан, возвращаются все поля.
+   * @param timestamp/date $input['since'] Начало этапа
+   * @param timestamp/date $input['until'] Конец этапа
+   * @param integer $input['offset'] Сдвиг относительно первого результата
+   * @param integer $input['limit'] Количество результатов (от 20 до 100)
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function victorypointshistory ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string', 'map_id' => 'string', 'clan_id' => 'numeric'), array('language' => 'string', 'fields' => 'string', 'since' => 'timestamp/date', 'until' => 'timestamp/date', 'offset' => 'numeric', 'limit' => 'numeric'))) return NULL;
+    $o = $this->send('globalwar/victorypointshistory', $i, array('http', 'https'));
+    return $o;
+  }
+
+}
+
+/**
+ * Аутентификация 
+ */
+class wgapi_wot_auth extends WgApiCore {
+
+  /**
+   * Вход по OpenID
+   * Метод осуществляет аутентификацию пользователя, используя Wargaming.net ID (OpenID). Пользователю необходимо ввести email и пароль, использованные при создании аккаунта.
+   * Информация о статусе аутентификации будет отправлена на URL, указанный в параметре **redirect_uri**.
+   * Параметры **redirect_uri** при успешной аутентификации:
+   * * **status: ok** — аутентификация пройдена;
+   * * **access_token** — ключ доступа, передаётся во все методы, требующие аутентификации;
+   * * **expires_at** — срок действия **access_token**;
+   * * **account_id** — идентификатор пользователя;
+   * * **nickname** — имя пользователя.
+   * Параметры **redirect_uri** при ошибке аутентификации:
+   * * **status: error** — произошла ошибка аутентификации;
+   * * **code** — код ошибки;
+   * * **message** — информация об ошибке.
+   * @category Аутентификация
+   * @link auth/login
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param integer $input['expires_at'] Срок действия **access_token** в формате UTC. Также можно указать дельту в секундах.
+   * Срок действия и дельта не должны превышать две недели, начиная с настоящего времени.
+   * @param string $input['redirect_uri'] 
+   * URL страницы, на которую будет перенаправлен пользователь после аутентификации.
+   * По умолчанию: [{API_HOST}/blank/](https://{API_HOST}/blank/)
+   * @param string $input['display'] Внешний вид формы мобильных приложений. Допустимые значения: **page**, **popup**.
+   * @param integer $input['nofollow'] При передаче параметра **nofollow=1** переадресация не происходит. URL возвращается в ответе.
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function login ($i = array()) {
+    $this->erorr->add(array(array(401, "AUTH_CANCEL", "Пользователь отменил авторизацию для приложения"), array(403, "AUTH_EXPIRED", "Превышено время ожидания авторизации пользователя"), array(410, "AUTH_ERROR", "Ошибка аутентификации")));
+    $mr = isset($i['return']) ? 'return' : 'location';
+    if (!$this->validate($i, array('application_id' => 'string'), array('language' => 'string', 'expires_at' => 'numeric', 'redirect_uri' => 'string', 'display' => 'string', 'nofollow' => 'numeric'))) return NULL;
+    if (!isset($i['redirect_uri']) || empty($i['redirect_uri'])) $i['redirect_uri'] = $_SERVER['REQUEST_SCHEME'] . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+    $n = get_called_class();
+    if (preg_match('/\?/i', $i['redirect_uri'])) $i['redirect_uri'] .= '&' . $n . '=' . __FUNCTION__;
+    else $i['redirect_uri'] .= '?' . $n . '=' . __FUNCTION__;
+    $o = $_REQUEST;
+    if (isset($o[$n]) && $o[$n] == 'login') {
+      unset($o[$n]);
+      //при отсутствие статуса выводим полученный масив
+      if (!isset($o['status'])) return $o;
+      //при верном статусе возвращаем данные
+      if ($o['status'] == 'ok') { unset($o['status']); return $o;}
+      //при ошибки переводим обработчик ошибок
+      $er = $o;
+      //присвоенние ошибки
+      $this->erorr->set($er, 'auth/login', $i);
+      switch ((string) $er['message']) {
+        //выполняем обновление клиента
+        case 'METHOD_DISABLED':
+        case 'METHOD_NOT_FOUND': $this->update(); break;
+      }
+      return NULL;
+    }
+    $o = $this->redirect('auth/login', $i, array('https'), $mr);
+    return $o;
+  }
+
+  /**
+   * Продление Access Token
+   * Метод генерирует новый **access_token** на основе действующего.
+   * Используется для тех случаев, когда пользователь всё ещё пользуется приложением, а срок действия **access_token** уже подходит к концу.
+   * @category Аутентификация
+   * @link auth/prolongate
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @param integer $input['expires_at'] Срок действия **access_token** в формате UTC. Также можно указать дельту в секундах.
+   * Срок действия и дельта не должны превышать две недели, начиная с настоящего времени.
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function prolongate ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string', 'access_token' => 'string'), array('language' => 'string', 'expires_at' => 'numeric'))) return NULL;
+    $o = $this->send('auth/prolongate', $i, array('https'));
+    return $o;
+  }
+
+  /**
+   * Выход
+   * Метод удаляет **access_token** пользователя.
+   * После вызова данного метода **access_token** перестаёт действовать.
+   * @category Аутентификация
+   * @link auth/logout
+   * @param array $input
+   * ----------------------------------------
+   * @param string $input['application_id'] Идентификатор приложения
+   * @param string $input['access_token'] Ключ доступа к персональным данным пользователя. Имеет срок действия. Для получения ключа доступа необходимо запросить аутентификацию.
+   * ----------------------------------------
+   * @param string $input['language'] Язык локализации. Допустимые значения: 
+   * * "en" - English 
+   * * "ru" - Русский (используется по умолчанию)
+   * * "pl" - Polski 
+   * * "de" - Deutsch 
+   * * "fr" - Français 
+   * * "es" - Español 
+   * * "zh-cn" - 简体中文 
+   * * "tr" - Türkçe 
+   * * "cs" - Čeština 
+   * * "th" - ไทย 
+   * * "vi" - Tiếng Việt 
+   * * "ko" - 한국어 
+   * @return array|NULL При возникновенние ошибки выдает NULL.
+   */
+  function logout ($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string', 'access_token' => 'string'), array('language' => 'string'))) return NULL;
+    $o = $this->send('auth/logout', $i, array('https'));
     return $o;
   }
 

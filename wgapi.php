@@ -76,17 +76,19 @@ class WgApiCore {
   public $load_class = array();
 
   /**
-   * Присвоение первичных параметров для функционально класса
+   * Присвоение первичных параметров для функционального класса
    * @param array $p Входящие параметры для объявления класса
    */
   function __construct($p = array()) {
     $p = (array) $p;
     foreach ($p as $_p_ => $_p)
-      if (!empty($_p) && $_p_ != 'parent' && !in_array($_p_, $this->load_class))
+      if (!empty($_p) && !in_array($_p_, $this->load_class))
         $this->$_p_ = $_p;
     $this->language((string) @$p['language']);
     $this->region((string) @$p['region']);
     $this->setuser(@$p['user']);
+    //загрузка класса кэшированния
+    $this->cache = new WgApiCache(@$p['cache']);
     $this->load();
   }
 
@@ -95,8 +97,6 @@ class WgApiCore {
    * @return boolean
    */
   function load() {
-    //загрузка класса ошибок
-    $this->erorr = new WgApiError();
     return true;
   }
 
@@ -208,7 +208,7 @@ class WgApiCore {
     //флаг авторизировано пользователя
     $_wt = (isset($p['access_token']) && !empty($p['access_token']));
     //выбор протокола
-    $pr = $this->protocol($pr, $_wt);
+    $_pr = $this->protocol($pr, $_wt);
     //определение ключа приложенния
     if (isset($p['application_id']) && empty($p['application_id']))
       $p['application_id'] = $_wt ? $this->apiStandalone : $this->apiServer;
@@ -216,6 +216,14 @@ class WgApiCore {
     if (isset($p['language']) && empty($p['language']))
       $p['language'] = $this->language;
     unset($_wt);
+    $_u = $this->setURL($_pr, $m);
+    $h = '-';
+    if (isset($this->cache)) {
+      $h = md5(md5($_u) . md5(json_encode($p)));
+      $r = $this->cache->get($h);
+      if ($r)
+        return $r;
+    }
     //формированние запроса
     $c = curl_init();
     //проверка будут ли использоватся параметры метода
@@ -225,7 +233,7 @@ class WgApiCore {
     }
     curl_setopt($c, CURLOPT_RETURNTRANSFER, true);
     //дополнительный параметр протокола
-    if ($pr == 'https')
+    if ($_pr == 'https')
       curl_setopt($c, CURLOPT_SSL_VERIFYPEER, false);
     //Эмулированние браузерра
     curl_setopt($c, CURLOPT_HTTPHEADER, array(
@@ -235,21 +243,30 @@ class WgApiCore {
       "Connection: Keep-Alive",
     ));
     curl_setopt($c, CURLOPT_TIMEOUT, 120);
-    curl_setopt($c, CURLOPT_URL, $this->setURL($pr, $m));
+    curl_setopt($c, CURLOPT_URL, $_u);
     $d = curl_exec($c);
     curl_close($c);
     //перевод данных в массив
     $r = @json_decode((string) @$d, true);
 //при ошибки получения массива возвращаем полученные данные
-    if (!$r)
+    if (!$r) {
+      if (isset($this->cache))
+        $this->cache->set($h, $d);
       return (string) @$d;
+    }
     unset($d);
     //при отсутствие статуса выводим полученный масив
-    if (!isset($r['status']))
+    if (!isset($r['status'])) {
+      if (isset($this->cache))
+        $this->cache->set($h, $r);
       return $r;
+    }
     //при верном статусе возвращаем данные
-    if ($r['status'] == 'ok')
+    if ($r['status'] == 'ok') {
+      if (isset($this->cache))
+        $this->cache->set($h, $r['data']);
       return $r['data'];
+    }
 //при ошибки переводим обработчик ошибок
     if (isset($r[$r['status']])) {
       $er = $r[$r['status']];
@@ -259,7 +276,7 @@ class WgApiCore {
         //выполняем запрос без токена
         case 'INVALID_ACCESS_TOKEN':
           unset($p['access_token']);
-          return $this->send($m, $p);
+          return $this->send($m, $p, $pr);
           break;
         //выполняем обновление клиента
         case 'METHOD_DISABLED':
@@ -410,7 +427,7 @@ class WgApiCore {
         if (isset($this->$c))
         //присвоенние дочернему классу переменных
           foreach ($_v as $__v_ => $__v)
-            if (!empty($__v) && $__v_ != 'parent' && !in_array($__v_, $this->load_class))
+            if (!empty($__v) && !in_array($__v_, $this->load_class))
               $this->$c->$__v_ = $__v;
     }
   }
@@ -545,12 +562,6 @@ class WgApiCore {
  * @version 1.0
  */
 class Wgapi extends WgapiCore {
-
-  /**
-   * Параметр определяющий что данный класс является главным/первичным
-   * @var boolean 
-   */
-  public $parent = true;
 
   /**
    * Выполняет загрузку вторичных классов, при их отсутствии выполняет обновляет данный файл.
@@ -689,3 +700,234 @@ class WgApiError {
   }
 
 }
+
+/**
+ * WgApiCache
+ * 
+ * Класс, кэширования запросов API
+ * 
+ * @author Serg Auer <auerserg@gmail.com>
+ * @version 1.0
+ */
+class WgApiCache {
+
+  /**
+   * Период кэширования
+   * @var integer 
+   */
+  public $period = 21600;
+
+  /**
+   * Адрес сервера кэширования Memcache
+   * @var string 
+   */
+  public $mem_server = '127.0.0.1';
+
+  /**
+   * Порт сервера кэширования Memcache
+   * @var integer 
+   */
+  public $mem_port = 11211;
+
+  /**
+   * Доступные методы кэширование на сервере
+   * @var array 
+   */
+  public $type_allowed = array();
+
+  /**
+   * Присвоение первичных параметров для функционального класса
+   * @param array $p
+   */
+  function __construct($p = array()) {
+    //определение дериктории поумолчанию
+    $this->file_dir = dirname(__FILE__) . DIRECTORY_SEPARATOR . 'WgCache' . DIRECTORY_SEPARATOR;
+    $p = (array) $p;
+    foreach ($p as $_p_ => $_p)
+      if (!empty($_p))
+        $this->$_p_ = $_p;
+    $this->check();
+    $this->type((string) @$p['type']);
+  }
+
+  /**
+   * Определение метода кэширования, который будет использоватся
+   * @param string $t Метод определенный пользователем
+   * @return string
+   */
+  function type($t = 'NULL') {
+    //проверка валидности языка
+    if (in_array($t, $this->type_allowed))
+      $this->type = $t;
+    return $this->type;
+  }
+
+  /**
+   * Проверяем доступные методы кэширования и определяем доступные возможности
+   */
+  function check() {
+    $ta = array();
+    //определяем null значенния - нечего не кэшировать
+    $this->type = 'null';
+    $ta[] = 'null';
+    //определяем min значенния - кэширование в переменную
+    $this->type = 'min';
+    $ta[] = 'min';
+    $this->min_cache = array();
+    //определяем file значенния - кэширование в файл
+    if (file_exists($this->file_dir) && is_dir($this->file_dir)) {
+      $this->type = 'file';
+      $ta[] = 'file';
+    }
+    //определяем apc значенния - кэширование в APC
+    if (function_exists('apc_store') && function_exists('apc_fetch')) {
+      $this->type = 'apc';
+      $ta[] = 'apc';
+    }
+    //определяем mem значенния - кэширование в Memcache
+    if (class_exists('Memcache')) {
+      $this->mem_c = new Memcache;
+      if ($this->mem_c->connect($this->mem_server, $this->mem_port)) {
+        $this->type = 'mem';
+        $ta[] = 'mem';
+      }
+    }
+    //определяем доступные методы
+    $this->type_allowed = $ta;
+  }
+
+  /**
+   * Первичный метод получения кэша
+   * @param string $h Ключ кэша
+   * @return mixed
+   */
+  function get($h) {
+    $fn = 'get_' . $this->type;
+    return $this->$fn($h);
+  }
+
+  /**
+   * Метод получения кэша Memcache
+   * @param string $h Ключ кэша
+   * @return mixed
+   */
+  function get_mem($h) {
+    return $this->mem_c->get($h);
+  }
+
+  /**
+   * Метод получения пустого кэша
+   * @param string $h Ключ кэша
+   * @return mixed
+   */
+  function get_null($h) {
+    return FALSE;
+  }
+
+  /**
+   * Метод получения кэша APC
+   * @param string $h Ключ кэша
+   * @return mixed
+   */
+  function get_apc($h) {
+    return apc_fetch($h);
+  }
+
+  /**
+   * Метод получения кэша файлово
+   * @param string $h Ключ кэша
+   * @return mixed
+   */
+  function get_file($h) {
+    if (file_exists($this->file_dir . $h)) {
+      if (time() - filemtime($this->file_dir . $h) < $this->period) {
+        $v = file_get_contents($this->file_dir . $h);
+        $v = json_decode($v, true);
+        if ($v)
+          return $v;
+      } else
+        @unlink($this->file_dir . $h);
+    }
+    return FALSE;
+  }
+
+  /**
+   * Метод получения кэша с переменной
+   * @param string $h Ключ кэша
+   * @return mixed
+   */
+  function get_min($h) {
+    if (isset($this->min_cache[$h]))
+      return $this->min_cache[$h];
+    return FALSE;
+  }
+
+  /**
+   * Первичный метод сохраненния кэша
+   * @param string $h Ключ кэша
+   * @param mixed $v Значение кэша
+   * @return mixed
+   */
+  function set($h, $v = '') {
+    $fn = 'set_' . $this->type;
+    return $this->$fn($h, $v);
+  }
+
+  /**
+   * Метод сохраненние кэша Memcache
+   * @param string $h Ключ кэша
+   * @param mixed $v Значение кэша
+   * @return mixed
+   */
+  function set_mem($h, $v = '') {
+    return $this->mem_c->set($h, $v, MEMCACHE_COMPRESSED, $this->period);
+  }
+
+  /**
+   * Метод сохраненние пустого кэша
+   * @param string $h Ключ кэша
+   * @param mixed $v Значение кэша
+   * @return mixed
+   */
+  function set_null($h, $v = '') {
+    return FALSE;
+  }
+
+  /**
+   * Метод сохраненние кэша APC
+   * @param string $h Ключ кэша
+   * @param mixed $v Значение кэша
+   * @return mixed
+   */
+  function set_apc($h, $v = '') {
+    return apc_store($h, $v, $this->period);
+  }
+
+  /**
+   * Метод сохраненние кэша Файл
+   * @param string $h Ключ кэша
+   * @param mixed $v Значение кэша
+   * @return mixed
+   */
+  function set_file($h, $v = '') {
+    if ($f = @fopen($this->file_dir . $h, 'w')) {
+      fwrite($f, json_encode($v));
+      fclose($f);
+      return TRUE;
+    } else
+      return FALSE;
+  }
+
+  /**
+   * Метод сохраненние кэша в переменную
+   * @param string $h Ключ кэша
+   * @param mixed $v Значение кэша
+   * @return mixed
+   */
+  function set_min($h, $v = '') {
+    $this->min_cache[$h] = $v;
+    return TRUE;
+  }
+
+}
+

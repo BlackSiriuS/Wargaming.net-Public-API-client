@@ -15,3 +15,4 @@ if (!is_null($output))
   var_dump($output);
 else
   var_dump($wot->account->erorr->get());
+var_dump($wot->cache);
