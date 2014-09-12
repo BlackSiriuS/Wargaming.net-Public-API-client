@@ -217,13 +217,10 @@ class WgApiCore {
       $p['language'] = $this->language;
     unset($_wt);
     $_u = $this->setURL($_pr, $m);
-    $h = '-';
-    if (isset($this->cache)) {
-      $h = md5(md5($_u) . md5(json_encode($p)));
-      $r = $this->cache->get($h);
-      if ($r)
-        return $r;
-    }
+    $h = md5(md5($_u) . md5(json_encode($p)));
+    $r = $this->cache->get($h);
+    if ($r)
+      return $r;
     //формированние запроса
     $c = curl_init();
     //проверка будут ли использоватся параметры метода
@@ -250,21 +247,18 @@ class WgApiCore {
     $r = @json_decode((string) @$d, true);
 //при ошибки получения массива возвращаем полученные данные
     if (!$r) {
-      if (isset($this->cache))
-        $this->cache->set($h, $d);
+      $this->cache->set($h, $d);
       return (string) @$d;
     }
     unset($d);
     //при отсутствие статуса выводим полученный масив
     if (!isset($r['status'])) {
-      if (isset($this->cache))
-        $this->cache->set($h, $r);
+      $this->cache->set($h, $r);
       return $r;
     }
     //при верном статусе возвращаем данные
     if ($r['status'] == 'ok') {
-      if (isset($this->cache))
-        $this->cache->set($h, $r['data']);
+      $this->cache->set($h, $r['data']);
       return $r['data'];
     }
 //при ошибки переводим обработчик ошибок
@@ -803,7 +797,11 @@ class WgApiCache {
    */
   function get($h) {
     $fn = 'get_' . $this->type;
-    return $this->$fn($h);
+    $v = $this->$fn($h);
+    $v = @json_decode($v, true);
+    if ($v)
+      return $v;
+    return FALSE;
   }
 
   /**
@@ -821,7 +819,7 @@ class WgApiCache {
    * @return mixed
    */
   function get_null($h) {
-    return FALSE;
+    return '';
   }
 
   /**
@@ -842,7 +840,6 @@ class WgApiCache {
     if (file_exists($this->file_dir . $h)) {
       if (time() - filemtime($this->file_dir . $h) < $this->period) {
         $v = file_get_contents($this->file_dir . $h);
-        $v = json_decode($v, true);
         if ($v)
           return $v;
       } else
@@ -870,7 +867,7 @@ class WgApiCache {
    */
   function set($h, $v = '') {
     $fn = 'set_' . $this->type;
-    return $this->$fn($h, $v);
+    return $this->$fn($h, json_encode($v));
   }
 
   /**
@@ -911,11 +908,11 @@ class WgApiCache {
    */
   function set_file($h, $v = '') {
     if ($f = @fopen($this->file_dir . $h, 'w')) {
-      fwrite($f, json_encode($v));
+      fwrite($f, $v);
       fclose($f);
       return TRUE;
-    } else
-      return FALSE;
+    }
+    return FALSE;
   }
 
   /**
@@ -930,4 +927,3 @@ class WgApiCache {
   }
 
 }
-
