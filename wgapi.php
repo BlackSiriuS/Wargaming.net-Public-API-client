@@ -5,7 +5,7 @@
  * Класс хранящий в себе все основные методы для работы основного и дочернего класса
  * 
  * @author Serg Auer <auerserg@gmail.com>
- * @version 3.4
+ * @version 3.5
  */
 class WgApiCore {
 
