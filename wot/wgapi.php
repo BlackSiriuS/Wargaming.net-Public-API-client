@@ -737,11 +737,16 @@ class WgApiCache {
     //определение дериктории поумолчанию
     $this->file_dir = dirname(__FILE__) . DIRECTORY_SEPARATOR . 'WgCache' . DIRECTORY_SEPARATOR;
     $p = (array) $p;
+    $t = '';
+    if (isset($p['type'])) {
+      $t = (string) @$p['type'];
+      unset($p['type']);
+    }
     foreach ($p as $_p_ => $_p)
       if (!empty($_p))
         $this->$_p_ = $_p;
     $this->check();
-    $this->type((string) @$p['type']);
+    $this->type($t);
   }
 
   /**

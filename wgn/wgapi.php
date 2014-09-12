@@ -737,11 +737,16 @@ class WgApiCache {
     //определение дериктории поумолчанию
     $this->file_dir = dirname(__FILE__) . DIRECTORY_SEPARATOR . 'WgCache' . DIRECTORY_SEPARATOR;
     $p = (array) $p;
+    $t = '';
+    if (isset($p['type'])) {
+      $t = (string) @$p['type'];
+      unset($p['type']);
+    }
     foreach ($p as $_p_ => $_p)
       if (!empty($_p))
         $this->$_p_ = $_p;
     $this->check();
-    $this->type((string) @$p['type']);
+    $this->type($t);
   }
 
   /**
@@ -927,17 +932,19 @@ class WgApiCache {
   }
 
 }
+
 // After this line rewrite code
 
 
 /**
  * Wargaming.net 
  */
+
 /**
  * WG League 
  */
 class wgapi_wgn_league extends WgApiCore {
-
+  
 }
 
 /**
@@ -972,8 +979,9 @@ class wgapi_wgn_wargag extends WgApiCore {
    * * "-rating" - по значению рейтинга в обратном порядке 
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
-  function content ($i = array()) {
-    if (!$this->validate($i, array('application_id' => 'string'), array('fields' => 'string', 'type' => 'string', 'date' => 'timestamp/date', 'category_id' => 'numeric', 'tag_id' => 'numeric', 'rating_threshold' => 'numeric', 'account_id' => 'numeric', 'page_no' => 'numeric', 'order_by' => 'string'))) return NULL;
+  function content($i = array()) {
+    if (!$this->validate($i, array('application_id' => 'string'), array('fields' => 'string', 'type' => 'string', 'date' => 'timestamp/date', 'category_id' => 'numeric', 'tag_id' => 'numeric', 'rating_threshold' => 'numeric', 'account_id' => 'numeric', 'page_no' => 'numeric', 'order_by' => 'string')))
+      return NULL;
     $o = $this->send('wargag/content', $i, array('http', 'https'));
     return $o;
   }
@@ -998,9 +1006,10 @@ class wgapi_wgn_wargag extends WgApiCore {
    * @param integer $input['rating_threshold'] Пороговое значение рейтинга публикации
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
-  function search ($i = array()) {
+  function search($i = array()) {
     $this->erorr->add(array(array(402, "Q_NOT_SPECIFIED", ""), array(407, "NOT_ENOUGH_Q_LENGTH", "")));
-    if (!$this->validate($i, array('application_id' => 'string', 'q' => 'string'), array('fields' => 'string', 'type' => 'string', 'category_id' => 'numeric', 'tag_id' => 'numeric', 'rating_threshold' => 'numeric'))) return NULL;
+    if (!$this->validate($i, array('application_id' => 'string', 'q' => 'string'), array('fields' => 'string', 'type' => 'string', 'category_id' => 'numeric', 'tag_id' => 'numeric', 'rating_threshold' => 'numeric')))
+      return NULL;
     $o = $this->send('wargag/search', $i, array('http', 'https'));
     return $o;
   }
@@ -1019,9 +1028,10 @@ class wgapi_wgn_wargag extends WgApiCore {
    * @param integer $input['page_no'] Номер страницы результатов
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
-  function comments ($i = array()) {
+  function comments($i = array()) {
     $this->erorr->add(array(array(404, "CONTENT_ID_NOT_FOUND", "")));
-    if (!$this->validate($i, array('application_id' => 'string', 'content_id' => 'numeric'), array('fields' => 'string', 'page_no' => 'numeric'))) return NULL;
+    if (!$this->validate($i, array('application_id' => 'string', 'content_id' => 'numeric'), array('fields' => 'string', 'page_no' => 'numeric')))
+      return NULL;
     $o = $this->send('wargag/comments', $i, array('http', 'https'));
     return $o;
   }
@@ -1042,9 +1052,10 @@ class wgapi_wgn_wargag extends WgApiCore {
    * @param integer $input['category_id'] Идентификатор категории контента
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
-  function categories ($i = array()) {
+  function categories($i = array()) {
     $this->erorr->add(array(array(404, "CATEGORY_ID_NOT_FOUND", "")));
-    if (!$this->validate($i, array('application_id' => 'string', 'type' => 'string'), array('fields' => 'string', 'category_id' => 'numeric'))) return NULL;
+    if (!$this->validate($i, array('application_id' => 'string', 'type' => 'string'), array('fields' => 'string', 'category_id' => 'numeric')))
+      return NULL;
     $o = $this->send('wargag/categories', $i, array('http', 'https'));
     return $o;
   }
@@ -1062,12 +1073,12 @@ class wgapi_wgn_wargag extends WgApiCore {
    * @param integer $input['tag_id'] Идентификатор тега
    * @return array|NULL При возникновенние ошибки выдает NULL.
    */
-  function tags ($i = array()) {
+  function tags($i = array()) {
     $this->erorr->add(array(array(404, "TAG_ID_NOT_FOUND", "")));
-    if (!$this->validate($i, array('application_id' => 'string'), array('fields' => 'string', 'tag_id' => 'numeric'))) return NULL;
+    if (!$this->validate($i, array('application_id' => 'string'), array('fields' => 'string', 'tag_id' => 'numeric')))
+      return NULL;
     $o = $this->send('wargag/tags', $i, array('http', 'https'));
     return $o;
   }
 
 }
-
