@@ -1274,6 +1274,7 @@ class wgapi_wowp_encyclopedia extends WgApiCore {
    * * "fighter" - Истребитель 
    * * "fighterHeavy" - Тяжёлый истребитель 
    * * "assault" - Штурмовик 
+   * * "navy" - Палубный истребитель 
    * @param string $input['nation'] Нация. Допустимые значения: 
    * * "ussr" - СССР 
    * * "germany" - Германия 
