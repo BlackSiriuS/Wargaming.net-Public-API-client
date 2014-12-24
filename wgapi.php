@@ -786,7 +786,7 @@ class WgApiCache {
     //определяем mem значенния - кэширование в Memcache
     if (class_exists('Memcache')) {
       $this->mem_c = new Memcache;
-      if ($this->mem_c->connect($this->mem_server, $this->mem_port)) {
+      if (@$this->mem_c->connect($this->mem_server, $this->mem_port)) {
         $this->type = 'mem';
         $ta[] = 'mem';
       }
